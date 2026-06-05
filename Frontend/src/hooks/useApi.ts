@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type ProductsQuery } from '@/lib/api';
 import { queryKeys } from '@/lib/queryKeys';
+import type { ProfileSettings } from '@/types/api';
 
 export function useDashboardState() {
   return useQuery({
@@ -58,6 +59,27 @@ export function useRunProfile() {
       qc.invalidateQueries({ queryKey: ['crawl-history'] });
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: queryKeys.state });
+    },
+  });
+}
+
+export function useUpdateProfileSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { fileName: string; settings: ProfileSettings }) =>
+      api.updateProfileSettings(vars.fileName, vars.settings),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.profiles });
+    },
+  });
+}
+
+export function useDeleteProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fileName: string) => api.deleteProfile(fileName),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.profiles });
     },
   });
 }

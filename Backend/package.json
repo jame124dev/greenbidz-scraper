@@ -8,14 +8,14 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "node main.js",
+    "start": "node main.js",
     "setup": "node setup.js",
     "manual-run": "node manual-run.js",
     "create-mapping": "node manual-mapping/create-profile.js",
     "edit-mapping": "node manual-mapping/edit-profile.js",
     "validate-mappings": "node manual-mapping/validate-profile.js",
     "manual-override": "node manual-run.js --override",
-    "web": "node web/server.js",
+    "dev": "node web/server.js",
     "share": "cloudflared tunnel --url http://localhost:5173 --no-autoupdate",
     "recon": "node scripts/recon.js"
   },

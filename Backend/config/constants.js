@@ -63,6 +63,22 @@ export const CONSTANTS = {
   NAV_WAIT_UNTIL: process.env.NAV_WAIT_UNTIL || 'networkidle2',
   VIEWPORT: { width: 1920, height: 1080 },
 
+  // ── Mapping Studio proxy renderer (web/proxy/page-proxy.js) ───
+  // These ONLY affect the interactive proxy renderer, not the scrapers.
+  // Overall wall-clock budget for one proxy render.
+  PROXY_RENDER_TIMEOUT_MS: intEnv(process.env.PROXY_RENDER_TIMEOUT_MS, 60000),
+  // How long to wait for meaningful content to appear after navigation.
+  PROXY_CONTENT_WAIT_MS: intEnv(process.env.PROXY_CONTENT_WAIT_MS, 25000),
+  // Quiet settle period after content appears (lets late cards/text paint).
+  PROXY_SETTLE_MS: intEnv(process.env.PROXY_SETTLE_MS, 1500),
+  // Block image/media downloads DURING the backend render (the <img src> tags
+  // stay in the snapshot and load in the user's browser via <base href>, so the
+  // Studio still shows images — this just stops the backend waiting on them).
+  PROXY_BLOCK_IMAGES: boolEnv(process.env.PROXY_BLOCK_IMAGES, true),
+  // Persistent Chromium profile for the proxy browser so JS/CSS bundles are
+  // cached across renders (2nd+ render of a domain is far faster).
+  PROXY_CACHE_DIR: resolveFromRoot(process.env.PROXY_CACHE_DIR, '.proxy-cache'),
+
   // ── Pagination safety limits ──────────────────────────────────
   MAX_PAGES: intEnv(process.env.MAX_PAGES, 500),
 

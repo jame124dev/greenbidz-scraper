@@ -13,7 +13,13 @@ import http from 'node:http';
 import { CONSTANTS } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
 import { isValidUrl, validateProfile, extractDomain } from '../utils/validators.js';
-import { writeProfile, profileExists, readAllProfiles, readProfile } from '../utils/file-manager.js';
+import {
+  writeProfile,
+  profileExists,
+  readAllProfiles,
+  readProfile,
+  deleteProfile,
+} from '../utils/file-manager.js';
 import { extractUrlPattern, findMatchingProfile, findApiProfileForListing } from '../detectors/url-pattern-matcher.js';
 import { autoDetectFields } from '../detectors/field-auto-detector.js';
 import { detectApiConfig } from '../detectors/api-detector.js';
@@ -27,12 +33,22 @@ import {
   listPendingMappings,
   listCrawlHistory,
   getProductById,
+  getLastCrawlTimes,
 } from '../database/queries.js';
 import { testConnection } from '../config/database.js';
 
-// Backend runs on its own port (default 4000); the Vite frontend (5173) proxies
-// /api here. Override with WEB_PORT.
+// Backend runs on its own port (default 4000). The Vite frontend (5173) calls
+// these /api routes directly (cross-origin), so CORS is required.
+// Override port with WEB_PORT, allowed origin with CORS_ORIGIN (default *).
 const PORT = Number.parseInt(process.env.WEB_PORT, 10) || 4000;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+
+function applyCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Max-Age', '86400');
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -445,27 +461,155 @@ async function handleCrawlHistory(res, urlObj) {
   return sendJson(res, 200, { history });
 }
 
+/**
+ * Next scheduled crawl time for the global cron `0 *\/N * * *` (every N hours on
+ * the hour, local time). Returns an ISO string. Mirrors the scheduler's
+ * CRAWL_INTERVAL_HOURS so the UI can show "next scrape in …" for auto profiles.
+ * @returns {string}
+ */
+function computeNextRun() {
+  const interval = Math.max(1, CONSTANTS.CRAWL_INTERVAL_HOURS || 2);
+  const now = new Date();
+  for (let h = 0; h < 24; h += interval) {
+    const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, 0, 0, 0);
+    if (candidate.getTime() > now.getTime()) return candidate.toISOString();
+  }
+  // Past the last slot today → first slot (midnight) tomorrow.
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0).toISOString();
+}
+
 /** GET /api/profiles — list saved profiles with enough detail for the Profiles page. */
 async function handleProfiles(res) {
   const all = await readAllProfiles();
+
+  // "Last scraped" per listing URL, derived from crawl_history. Best-effort: if
+  // the DB is unavailable the page still renders (timestamps just show as null).
+  const lastByUrl = new Map();
+  try {
+    for (const row of await getLastCrawlTimes()) {
+      lastByUrl.set(row.listing_url, row.last_timestamp);
+    }
+  } catch (err) {
+    logger.warn(`Could not load crawl times for profiles: ${err.message}`);
+  }
+  const nextRun = computeNextRun();
+
   const profiles = all
     .filter((e) => e.profile)
-    .map(({ fileName, profile }) => ({
-      fileName,
-      profileId: profile.profileId,
-      profileName: profile.profileName,
-      domain: profile.domain,
-      source: profile.source || 'dom',
+    .map(({ fileName, profile }) => {
+      const listingUrls = Array.isArray(profile.listingUrls) ? profile.listingUrls : [];
+      const paused = !!profile.paused;
+      const scrapeMode = profile.scrapeMode || null;
+
+      // Most-recent crawl across any of this profile's listing URLs.
+      let lastScrapedAt = null;
+      for (const url of listingUrls) {
+        const ts = lastByUrl.get(url);
+        if (ts && (!lastScrapedAt || new Date(ts) > new Date(lastScrapedAt))) lastScrapedAt = ts;
+      }
+
+      return {
+        fileName,
+        profileId: profile.profileId,
+        profileName: profile.profileName,
+        domain: profile.domain,
+        source: profile.source || 'dom',
+        scrapeMode,
+        scrapeLimit: profile.scrapeLimit ?? null,
+        downloadImages: !!profile.downloadImages,
+        paused,
+        urlPattern: profile.urlPattern,
+        listingUrls,
+        fieldCount: profile.fields ? Object.keys(profile.fields).length : 0,
+        hasImages: !!(profile.selectors && profile.selectors.images),
+        updatedAt: profile.updatedAt || null,
+        lastScrapedAt,
+        // Only auto + not-paused profiles are picked up by the scheduler.
+        nextScrapeAt: scrapeMode === 'auto' && !paused ? nextRun : null,
+      };
+    });
+  return sendJson(res, 200, { profiles });
+}
+
+/** Settings the Profiles page is allowed to change on an existing profile. */
+const EDITABLE_SETTINGS = ['scrapeMode', 'scrapeLimit', 'downloadImages', 'paused'];
+
+/**
+ * POST /api/profile-settings { fileName, settings } — lightweight, partial
+ * update of an EXISTING profile's run settings. Unlike /api/save-profile it
+ * does NOT re-validate the whole profile and does NOT trigger a crawl; it just
+ * merges the allowed keys and writes the file back.
+ */
+async function handleProfileSettings(req, res) {
+  const body = await readBody(req);
+  const { fileName, settings } = body;
+  if (!fileName || typeof fileName !== 'string') {
+    return sendJson(res, 400, { error: 'fileName required.' });
+  }
+  if (!settings || typeof settings !== 'object') {
+    return sendJson(res, 400, { error: 'settings object required.' });
+  }
+  const fn = fileName.endsWith('.json') ? fileName : `${fileName}.json`;
+  if (!profileExists(fn)) {
+    return sendJson(res, 404, { error: `Profile not found: ${fn}` });
+  }
+
+  const profile = await readProfile(fn);
+
+  if ('scrapeMode' in settings) {
+    if (settings.scrapeMode !== 'auto' && settings.scrapeMode !== 'manual') {
+      return sendJson(res, 400, { error: "scrapeMode must be 'auto' or 'manual'." });
+    }
+    profile.scrapeMode = settings.scrapeMode;
+  }
+  if ('scrapeLimit' in settings) {
+    const v = settings.scrapeLimit;
+    if (v === null || v === '') {
+      profile.scrapeLimit = null;
+    } else {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 1) {
+        return sendJson(res, 400, { error: 'scrapeLimit must be a positive integer or null.' });
+      }
+      profile.scrapeLimit = n;
+    }
+  }
+  if ('downloadImages' in settings) profile.downloadImages = !!settings.downloadImages;
+  if ('paused' in settings) profile.paused = !!settings.paused;
+
+  // Ignore anything not explicitly editable (defensive).
+  const unknown = Object.keys(settings).filter((k) => !EDITABLE_SETTINGS.includes(k));
+  if (unknown.length) logger.warn(`Ignored non-editable profile settings: ${unknown.join(', ')}`);
+
+  profile.updatedAt = new Date().toISOString();
+  const full = await writeProfile(fn, profile);
+  logger.success(`Profile settings updated via UI: ${full}`);
+
+  return sendJson(res, 200, {
+    ok: true,
+    fileName: fn,
+    settings: {
       scrapeMode: profile.scrapeMode || null,
       scrapeLimit: profile.scrapeLimit ?? null,
-      urlPattern: profile.urlPattern,
-      listingUrls: Array.isArray(profile.listingUrls) ? profile.listingUrls : [],
-      fieldCount: profile.fields ? Object.keys(profile.fields).length : 0,
-      hasImages: !!(profile.selectors && profile.selectors.images),
       downloadImages: !!profile.downloadImages,
-      updatedAt: profile.updatedAt || null,
-    }));
-  return sendJson(res, 200, { profiles });
+      paused: !!profile.paused,
+    },
+  });
+}
+
+/** POST /api/delete-profile { fileName } — permanently delete a profile file. */
+async function handleDeleteProfile(req, res) {
+  const { fileName } = await readBody(req);
+  if (!fileName || typeof fileName !== 'string') {
+    return sendJson(res, 400, { error: 'fileName required.' });
+  }
+  const fn = fileName.endsWith('.json') ? fileName : `${fileName}.json`;
+  if (!profileExists(fn)) {
+    return sendJson(res, 404, { error: `Profile not found: ${fn}` });
+  }
+  await deleteProfile(fn);
+  logger.success(`Profile deleted via UI: ${fn}`);
+  return sendJson(res, 200, { ok: true, fileName: fn });
 }
 
 /** POST /api/run-profile { fileName } — crawl this profile's listing URL(s) now (async). */
@@ -519,6 +663,13 @@ const server = http.createServer(async (req, res) => {
   const urlObj = new URL(req.url, `http://localhost:${PORT}`);
   const { pathname } = urlObj;
 
+  // CORS for the cross-origin Vite frontend; short-circuit preflight requests.
+  applyCors(res);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    return res.end();
+  }
+
   try {
     // Root: a tiny API banner (the UI lives in the separate Frontend project).
     if (req.method === 'GET' && pathname === '/') {
@@ -530,6 +681,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && pathname === '/api/state') return await handleState(res);
     if (req.method === 'GET' && pathname === '/api/profiles') return await handleProfiles(res);
+    if (req.method === 'POST' && pathname === '/api/profile-settings') return await handleProfileSettings(req, res);
+    if (req.method === 'POST' && pathname === '/api/delete-profile') return await handleDeleteProfile(req, res);
     if (req.method === 'POST' && pathname === '/api/run-profile') return await handleRunProfile(req, res);
     if (req.method === 'GET' && pathname === '/api/scrape-progress') return handleScrapeProgress(res, urlObj);
     if (req.method === 'POST' && pathname === '/api/scrape-cancel') return await handleScrapeCancel(req, res);

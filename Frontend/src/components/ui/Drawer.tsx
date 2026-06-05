@@ -8,6 +8,7 @@ export function Drawer({
   title,
   subtitle,
   children,
+  footer,
   width = 'max-w-xl',
 }: {
   open: boolean;
@@ -15,6 +16,8 @@ export function Drawer({
   title: ReactNode;
   subtitle?: ReactNode;
   children: ReactNode;
+  /** Optional non-scrolling footer pinned to the bottom of the drawer. */
+  footer?: ReactNode;
   width?: string;
 }) {
   useEffect(() => {
@@ -51,6 +54,7 @@ export function Drawer({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">{children}</div>
+        {footer && <div className="shrink-0 border-t border-line bg-panel px-5 py-3">{footer}</div>}
       </div>
     </div>
   );

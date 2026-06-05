@@ -18,6 +18,8 @@ export interface NavItem {
   /** Routes that are not yet implemented show a "soon" hint. */
   soon?: boolean;
   end?: boolean;
+  /** Show a live count badge on the right (from dashboard state). */
+  badge?: 'products' | 'profiles';
 }
 
 export interface NavGroup {
@@ -36,16 +38,16 @@ export const navGroups: NavGroup[] = [
   {
     heading: 'Data',
     items: [
-      { to: '/products', label: 'Products', icon: Package },
+      { to: '/products', label: 'Products', icon: Package, badge: 'products' },
       { to: '/crawls', label: 'Crawl History', icon: History },
     ],
   },
   {
     heading: 'Configuration',
     items: [
-      { to: '/sources', label: 'Sources', icon: Globe, soon: true },
-      { to: '/profiles', label: 'Profiles', icon: FileCode2 },
-      { to: '/pending', label: 'Pending', icon: ClipboardList, soon: true },
+      // { to: '/sources', label: 'Sources', icon: Globe, soon: true },
+      { to: '/profiles', label: 'Profiles', icon: FileCode2, badge: 'profiles' },
+      // { to: '/pending', label: 'Pending', icon: ClipboardList, soon: true },
       { to: '/scheduler', label: 'Scheduler', icon: CalendarClock, soon: true },
       { to: '/settings', label: 'Settings', icon: Settings, soon: true },
     ],

@@ -1,10 +1,10 @@
 {
-  "profileId": "profile_wwwlabassetscom",
+  "profileId": "profile_labassetscom",
   "profileName": "labassets",
-  "domain": "www.labassets.com",
+  "domain": "labassets.com",
   "urlPattern": "https://www\\.labassets\\.com/listings/\\d+[^/]*",
   "source": "dom",
-  "downloadImages": false,
+  "downloadImages": true,
   "scrapeMode": "manual",
   "scrapeLimit": 20,
   "listingUrls": [
@@ -51,28 +51,14 @@
       "required": false,
       "xpath": "/html[1]/body[1]/div[2]/div[2]/div[1]/div[1]/div[1]/div[2]/div[1]/div[2]/div[1]/div[4]/table[1]/tbody[1]/tr[4]/td[2]",
       "sampleValue": "S/N NB2029AP"
-    },
-    "manufacturer": {
-      "selector": "table.table-xs-fixed > tbody > tr:nth-of-type(1) > td.text-xs-ellipsis.notranslate:nth-of-type(2)",
-      "type": "text",
-      "required": false,
-      "xpath": "/html[1]/body[1]/div[2]/div[2]/div[1]/div[1]/div[1]/div[2]/div[1]/div[2]/div[1]/div[4]/table[1]/tbody[1]/tr[1]/td[2]",
-      "sampleValue": "Fedegari"
-    },
-    "condition": {
-      "selector": "table.table-xs-fixed > tbody > tr:nth-of-type(3) > td.text-xs-ellipsis:nth-of-type(2)",
-      "type": "text",
-      "required": false,
-      "xpath": "/html[1]/body[1]/div[2]/div[2]/div[1]/div[1]/div[1]/div[2]/div[1]/div[2]/div[1]/div[4]/table[1]/tbody[1]/tr[3]/td[2]",
-      "sampleValue": "Used"
     }
   },
   "selectors": {
-    "images": "img.gallery-image",
+    "images": "img.gallery-image.entered",
     "waitForSelector": "h1.show-info__title",
     "timeout": 15000
   },
-  "createdAt": "2026-06-05T10:38:52.156Z",
-  "updatedAt": "2026-06-05T10:38:52.166Z",
+  "createdAt": "2026-06-05T09:17:53.519Z",
+  "updatedAt": "2026-06-05T09:17:53.547Z",
   "usageCount": 0
 }

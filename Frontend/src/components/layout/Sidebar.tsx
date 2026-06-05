@@ -16,6 +16,12 @@ export function Sidebar({
 }) {
   const { data } = useDashboardState();
 
+  const badgeValue = (key?: 'products' | 'profiles') => {
+    if (key === 'products') return data?.counts.total;
+    if (key === 'profiles') return data?.profiles.length;
+    return undefined;
+  };
+
   return (
     <aside
       className={cn(
@@ -77,24 +83,22 @@ export function Sidebar({
                       soon
                     </span>
                   )}
+                  {item.badge && badgeValue(item.badge) != null && (
+                    <span
+                      className={cn(
+                        'ml-auto rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-semibold text-ink',
+                        collapsed && 'lg:hidden',
+                      )}
+                    >
+                      {formatNumber(badgeValue(item.badge))}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>
           </div>
         ))}
       </nav>
-
-      {/* Footer counts */}
-      <div className={cn('border-t border-line px-5 py-4 text-xs text-muted', collapsed && 'lg:hidden')}>
-        <div className="flex items-center justify-between">
-          <span>Products</span>
-          <span className="font-semibold text-ink">{formatNumber(data?.counts.total)}</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between">
-          <span>Profiles</span>
-          <span className="font-semibold text-ink">{formatNumber(data?.profiles.length)}</span>
-        </div>
-      </div>
     </aside>
   );
 }

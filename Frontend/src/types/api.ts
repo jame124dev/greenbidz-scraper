@@ -90,16 +90,46 @@ export interface ProfileListItem {
   source: ProfileSource;
   scrapeMode: ScrapeMode | null;
   scrapeLimit?: number | null;
+  downloadImages: boolean;
+  /** When true, an 'auto' profile is excluded from the recurring cron. */
+  paused: boolean;
   urlPattern?: string;
   listingUrls: string[];
   fieldCount: number;
   hasImages: boolean;
-  downloadImages: boolean;
   updatedAt: string | null;
+  /** Most recent crawl across this profile's listing URLs (ISO), or null. */
+  lastScrapedAt: string | null;
+  /** Next scheduled crawl (ISO) for active auto profiles, else null. */
+  nextScrapeAt: string | null;
 }
 
 export interface ProfilesResponse {
   profiles: ProfileListItem[];
+}
+
+/** Partial, editable run-settings for an existing profile. */
+export interface ProfileSettings {
+  scrapeMode?: ScrapeMode;
+  scrapeLimit?: number | null;
+  downloadImages?: boolean;
+  paused?: boolean;
+}
+
+export interface ProfileSettingsResponse {
+  ok: boolean;
+  fileName: string;
+  settings: {
+    scrapeMode: ScrapeMode | null;
+    scrapeLimit: number | null;
+    downloadImages: boolean;
+    paused: boolean;
+  };
+}
+
+export interface DeleteProfileResponse {
+  ok: boolean;
+  fileName: string;
 }
 
 export interface RunProfileResponse {

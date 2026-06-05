@@ -9,6 +9,7 @@ import {
   Search,
   Square,
   Ban,
+  Minimize2,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
@@ -53,14 +54,14 @@ export function ScrapeProgress({ jobId, onBuildAnother }: { jobId: string; onBui
         {/* Icon */}
         <div
           className={cn(
-            'mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full',
+            'mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full ring-4 ring-inset',
             errored
-              ? 'bg-red-900/30'
+              ? 'bg-red-900/30 ring-red-900/20'
               : cancelled
-                ? 'bg-amber-900/30'
+                ? 'bg-amber-900/30 ring-amber-900/20'
                 : done
-                  ? 'bg-emerald-900/30'
-                  : 'bg-panel2',
+                  ? 'bg-emerald-900/30 ring-emerald-900/20'
+                  : 'bg-sky-900/20 ring-sky-900/20',
           )}
         >
           {errored ? (
@@ -113,15 +114,27 @@ export function ScrapeProgress({ jobId, onBuildAnother }: { jobId: string; onBui
 
         {/* Progress bar */}
         {!errored && (
-          <div className="mx-auto mt-5 h-2.5 w-full overflow-hidden rounded-full bg-panel2">
-            <div
-              className={cn(
-                'h-full rounded-full transition-all duration-500',
-                cancelled ? 'bg-warn' : done ? 'bg-accent' : 'bg-sky2',
-                discovering && 'animate-pulse',
+          <div className="mx-auto mt-5">
+            <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-panel2">
+              {discovering ? (
+                // Indeterminate sliding bar while we don't know the total yet.
+                <div
+                  className="absolute top-0 h-full rounded-full bg-sky2 animate-indeterminate"
+                  style={{ left: '-40%', width: '40%' }}
+                />
+              ) : (
+                <div
+                  className={cn(
+                    'h-full rounded-full transition-all duration-500',
+                    cancelled ? 'bg-warn' : done ? 'bg-accent' : 'bg-sky2',
+                  )}
+                  style={{ width: `${pct}%` }}
+                />
               )}
-              style={{ width: `${discovering ? 30 : pct}%` }}
-            />
+            </div>
+            <div className="mt-1.5 text-right text-xs font-medium text-muted">
+              {discovering ? 'scanning…' : `${pct}%`}
+            </div>
           </div>
         )}
 
@@ -134,17 +147,25 @@ export function ScrapeProgress({ jobId, onBuildAnother }: { jobId: string; onBui
         )}
 
         {/* Actions */}
-        <div className="mt-6 flex justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           {running ? (
-            <Button
-              variant="danger"
-              icon={<Square className="h-4 w-4" />}
-              loading={cancel.isPending}
-              disabled={stopping}
-              onClick={() => cancel.mutate()}
-            >
-              {stopping ? 'Stopping…' : 'Stop'}
-            </Button>
+            <>
+              <Button
+                icon={<Minimize2 className="h-4 w-4" />}
+                onClick={() => navigate('/products')}
+              >
+                Run in background
+              </Button>
+              <Button
+                variant="danger"
+                icon={<Square className="h-4 w-4" />}
+                loading={cancel.isPending}
+                disabled={stopping}
+                onClick={() => cancel.mutate()}
+              >
+                {stopping ? 'Stopping…' : 'Stop'}
+              </Button>
+            </>
           ) : (
             <>
               <Button variant="secondary" onClick={() => navigate('/products')}>
@@ -158,6 +179,12 @@ export function ScrapeProgress({ jobId, onBuildAnother }: { jobId: string; onBui
           )}
         </div>
 
+        {running && !stopping && (
+          <p className="mt-3 text-[11px] text-muted">
+            The crawl keeps running on the server — you can leave this page and check progress in
+            Crawl History.
+          </p>
+        )}
         {stopping && running && (
           <p className="mt-3 text-[11px] text-muted">
             Finishing the current product, then stopping…

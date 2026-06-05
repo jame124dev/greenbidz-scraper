@@ -1,11 +1,15 @@
-// Thin fetch wrapper + typed endpoint functions. All requests go to /api/*,
-// which Vite proxies to the backend (http://localhost:4000) in dev.
+// Thin fetch wrapper + typed endpoint functions. All requests go directly to
+// the backend API at API_BASE (default http://localhost:4000), no Vite proxy.
+// Override with VITE_API_BASE_URL in the Frontend env.
 
 import type {
   CrawlHistoryResponse,
+  DeleteProfileResponse,
   DomProfile,
   Product,
   ProductsResponse,
+  ProfileSettings,
+  ProfileSettingsResponse,
   ProfilesResponse,
   RunProfileResponse,
   SaveProfileResponse,
@@ -13,6 +17,10 @@ import type {
   StateResponse,
   UrlPatternResponse,
 } from '@/types/api';
+
+// Backend API origin. Empty string would fall back to same-origin; we default
+// to the local backend port so the frontend talks to it directly.
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000').replace(/\/$/, '');
 
 export class ApiError extends Error {
   status: number;
@@ -28,7 +36,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(`${API_BASE}/api${path}`, {
       headers: { 'Content-Type': 'application/json' },
       ...init,
     });
@@ -89,7 +97,11 @@ export const api = {
 
   // ── Mapping Studio (Phase 2) ────────────────────────────────────────────────
 
-  /** Same-origin proxied snapshot URL for the Studio iframe (loaded directly). */
+  /**
+   * Same-origin snapshot URL for the Studio iframe. This stays RELATIVE (no
+   * API_BASE) so it goes through the Vite dev proxy and the iframe is same-origin
+   * with the app — required for testSelector/countMatches to read contentDocument.
+   */
   proxyPageSrc: (url: string) => `/api/proxy-page?url=${encodeURIComponent(url)}`,
 
   getUrlPattern: (url: string) =>
@@ -108,6 +120,18 @@ export const api = {
 
   runProfile: (fileName: string) =>
     request<RunProfileResponse>('/run-profile', {
+      method: 'POST',
+      body: JSON.stringify({ fileName }),
+    }),
+
+  updateProfileSettings: (fileName: string, settings: ProfileSettings) =>
+    request<ProfileSettingsResponse>('/profile-settings', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, settings }),
+    }),
+
+  deleteProfile: (fileName: string) =>
+    request<DeleteProfileResponse>('/delete-profile', {
       method: 'POST',
       body: JSON.stringify({ fileName }),
     }),

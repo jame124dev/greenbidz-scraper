@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileCode2, Play, Plus, CheckCircle2, Images, AlertCircle } from 'lucide-react';
+import { FileCode2, Play, Plus, CheckCircle2, Settings2, AlertCircle, PauseCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -9,18 +9,20 @@ import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { ErrorState, TableSkeleton, EmptyState } from '@/components/ui/states';
 import { useProfiles, useRunProfile } from '@/hooks/useApi';
 import type { ProfileListItem } from '@/types/api';
-import { timeAgo } from '@/lib/format';
+import { timeAgo, timeUntil } from '@/lib/format';
+import { ProfileSettingsDrawer } from './ProfileSettingsDrawer';
 
 export function ProfilesPage() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error, refetch } = useProfiles();
   const profiles = data?.profiles ?? [];
+  const [selected, setSelected] = useState<ProfileListItem | null>(null);
 
   return (
     <>
       <PageHeader
         title="Profiles"
-        description="Saved scraping profiles. Run one to scrape new products on demand."
+        description="Saved scraping profiles. Click a profile to change its settings, or run one on demand."
         actions={
           <Button icon={<Plus className="h-4 w-4" />} onClick={() => navigate('/scraper/new')}>
             New scraper
@@ -44,31 +46,33 @@ export function ProfilesPage() {
             <Table>
               <THead>
                 <TH>Profile</TH>
-                <TH>Source</TH>
                 <TH>Mode</TH>
-                <TH>Mapping</TH>
-                <TH>Updated</TH>
+                <TH>Last scraped</TH>
+                <TH>Next scrape</TH>
                 <TH className="text-right">Actions</TH>
               </THead>
               <TBody>
                 {profiles.map((p) => (
-                  <ProfileRow key={p.fileName} profile={p} />
+                  <ProfileRow key={p.fileName} profile={p} onOpen={() => setSelected(p)} />
                 ))}
               </TBody>
             </Table>
           )}
         </CardBody>
       </Card>
+
+      <ProfileSettingsDrawer profile={selected} onClose={() => setSelected(null)} />
     </>
   );
 }
 
-function ProfileRow({ profile: p }: { profile: ProfileListItem }) {
+function ProfileRow({ profile: p, onOpen }: { profile: ProfileListItem; onOpen: () => void }) {
   const run = useRunProfile();
   const [done, setDone] = useState(false);
   const canRun = p.listingUrls.length > 0;
 
-  const onRun = () => {
+  const onRun = (e: React.MouseEvent) => {
+    e.stopPropagation();
     run.mutate(p.fileName, {
       onSuccess: () => {
         setDone(true);
@@ -78,18 +82,25 @@ function ProfileRow({ profile: p }: { profile: ProfileListItem }) {
   };
 
   return (
-    <TR>
-      <TD className="max-w-[320px]">
-        <div className="font-medium text-ink">{p.profileName || p.fileName}</div>
+    <TR className="cursor-pointer" onClick={onOpen}>
+      <TD className="max-w-[300px]">
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-ink">{p.profileName || p.fileName}</span>
+          <Badge tone={p.source === 'api' ? 'api' : 'dom'}>{p.source}</Badge>
+        </div>
         <div className="truncate text-xs text-muted">{p.domain || p.fileName}</div>
-      </TD>
-      <TD>
-        <Badge tone={p.source === 'api' ? 'api' : 'dom'}>{p.source}</Badge>
       </TD>
       <TD>
         <div className="flex items-center gap-1.5">
           {p.scrapeMode === 'auto' ? (
-            <Badge tone="yes">with job</Badge>
+            p.paused ? (
+              <Badge tone="warn">
+                <PauseCircle className="mr-1 inline h-3 w-3" />
+                paused
+              </Badge>
+            ) : (
+              <Badge tone="yes">with job</Badge>
+            )
           ) : p.scrapeMode === 'manual' ? (
             <Badge tone="neutral">one-time</Badge>
           ) : (
@@ -98,21 +109,19 @@ function ProfileRow({ profile: p }: { profile: ProfileListItem }) {
           <Badge tone="info">{p.scrapeLimit ? `≤${p.scrapeLimit}/run` : 'all/run'}</Badge>
         </div>
       </TD>
-      <TD>
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>{p.fieldCount} fields</span>
-          {p.hasImages && (
-            <span className="flex items-center gap-1">
-              <Images className="h-3 w-3" /> images
-            </span>
-          )}
-        </div>
+      <TD className="whitespace-nowrap text-xs text-muted">
+        {p.lastScrapedAt ? timeAgo(p.lastScrapedAt) : 'never'}
       </TD>
-      <TD className="whitespace-nowrap text-xs text-muted">{timeAgo(p.updatedAt)}</TD>
+      <TD className="whitespace-nowrap text-xs text-muted">
+        {p.scrapeMode === 'auto' && !p.paused && p.nextScrapeAt ? timeUntil(p.nextScrapeAt) : '—'}
+      </TD>
       <TD>
         <div className="flex items-center justify-end gap-2">
           {run.isError && (
-            <span className="flex items-center gap-1 text-xs text-danger" title={(run.error as Error).message}>
+            <span
+              className="flex items-center gap-1 text-xs text-danger"
+              title={(run.error as Error).message}
+            >
               <AlertCircle className="h-3.5 w-3.5" /> failed
             </span>
           )}
@@ -133,6 +142,18 @@ function ProfileRow({ profile: p }: { profile: ProfileListItem }) {
               Scrape new
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Settings2 className="h-3.5 w-3.5" />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen();
+            }}
+            title="Profile settings"
+          >
+            Settings
+          </Button>
         </div>
       </TD>
     </TR>

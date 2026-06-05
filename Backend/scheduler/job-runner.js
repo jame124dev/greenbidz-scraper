@@ -490,18 +490,21 @@ export async function reprocessPendingMappings({ browser } = {}) {
 
 /**
  * Run a crawl cycle over every profile the admin marked as "with job"
- * (scrapeMode === 'auto'), using each profile's own listingUrls. Profiles
- * without scrapeMode (or set to 'manual'/one-time) are skipped — there is NO
- * blanket crawl of .env LISTING_URLS anymore. Also re-detects unmapped patterns.
+ * (scrapeMode === 'auto') and NOT paused, using each profile's own listingUrls.
+ * Profiles without scrapeMode (or set to 'manual'/one-time), or with
+ * `paused: true`, are skipped — there is NO blanket crawl of .env LISTING_URLS
+ * anymore. Also re-detects unmapped patterns.
  *
  * @returns {Promise<object[]>} Per-listing crawl summaries.
  */
 export async function runAllAutoProfiles() {
   const all = await readAllProfiles();
-  const autoProfiles = all.filter((e) => e.profile && e.profile.scrapeMode === 'auto');
+  const autoProfiles = all.filter(
+    (e) => e.profile && e.profile.scrapeMode === 'auto' && !e.profile.paused,
+  );
 
   if (!autoProfiles.length) {
-    logger.info('No "with job" (scrapeMode=auto) profiles configured — nothing to auto-crawl.');
+    logger.info('No active "with job" (scrapeMode=auto, not paused) profiles — nothing to auto-crawl.');
     return [];
   }
 

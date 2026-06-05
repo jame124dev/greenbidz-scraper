@@ -42,6 +42,22 @@ export function timeAgo(iso: string | null | undefined): string {
   return `${days}d ago`;
 }
 
+/** Relative "in X" string for an upcoming timestamp. */
+export function timeUntil(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso).getTime();
+  if (Number.isNaN(d)) return String(iso);
+  const secs = Math.round((d - Date.now()) / 1000);
+  if (secs <= 0) return 'due now';
+  if (secs < 60) return `in ${secs}s`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `in ${hrs}h`;
+  const days = Math.round(hrs / 24);
+  return `in ${days}d`;
+}
+
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) return '—';
   if (seconds < 60) return `${seconds}s`;

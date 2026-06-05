@@ -415,6 +415,19 @@ export async function listCrawlHistory({ limit = 100 } = {}) {
 }
 
 /**
+ * Latest crawl timestamp per listing URL — used to show "last scraped" per
+ * profile on the Profiles page. One row per distinct listing_url.
+ * @returns {Promise<Array<{ listing_url: string, last_timestamp: string }>>}
+ */
+export async function getLastCrawlTimes() {
+  return query(
+    `SELECT listing_url, MAX(timestamp) AS last_timestamp
+     FROM crawl_history
+     GROUP BY listing_url`,
+  );
+}
+
+/**
  * Fetch a single product row by its numeric id, with image arrays parsed and
  * raw_data decoded. Returns null when not found. Powers the products detail drawer.
  * @param {number} id

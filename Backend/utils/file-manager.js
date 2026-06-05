@@ -96,6 +96,16 @@ export function profileExists(fileName) {
 }
 
 /**
+ * Delete a profile file. Resolves quietly if it's already gone.
+ * @param {string} fileName
+ * @returns {Promise<void>}
+ */
+export async function deleteProfile(fileName) {
+  const full = path.join(CONSTANTS.PROFILES_DIR, fileName);
+  await fs.rm(full, { force: true });
+}
+
+/**
  * Read a text file relative to project root.
  * @param {string} relativePath
  * @returns {Promise<string>}
@@ -113,5 +123,6 @@ export default {
   readAllProfiles,
   writeProfile,
   profileExists,
+  deleteProfile,
   readTextFile,
 };

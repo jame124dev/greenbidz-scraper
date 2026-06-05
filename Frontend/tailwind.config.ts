@@ -47,10 +47,15 @@ export default {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },
+        indeterminate: {
+          '0%': { left: '-40%', width: '40%' },
+          '100%': { left: '100%', width: '40%' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.25s ease-out',
         'slide-in': 'slide-in 0.25s cubic-bezier(0.16,1,0.3,1)',
+        indeterminate: 'indeterminate 1.2s ease-in-out infinite',
       },
     },
   },

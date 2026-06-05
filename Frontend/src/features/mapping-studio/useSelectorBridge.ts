@@ -9,8 +9,10 @@ interface BridgeHandlers {
 
 /**
  * Bridges the React parent and the injected selector script inside the proxied
- * iframe via window.postMessage. Same-origin (the iframe src is /api/proxy-page,
- * served through the dev proxy), so we can also read contentDocument for testing.
+ * iframe via window.postMessage. The iframe src is /api/proxy-page, which Vite
+ * proxies to the backend so it stays same-origin with the app — that lets us
+ * also read contentDocument directly for live selector testing (testSelector/
+ * countMatches below). Other API calls go direct to the backend via CORS.
  */
 export function useSelectorBridge(handlers: BridgeHandlers) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
