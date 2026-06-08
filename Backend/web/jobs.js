@@ -41,6 +41,12 @@ export function getJob(id) {
   return jobs.get(id) || null;
 }
 
+/** All tracked jobs, newest first. Optionally filter to a status. */
+export function listJobs(status = null) {
+  const all = [...jobs.values()].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+  return status ? all.filter((j) => j.status === status) : all;
+}
+
 export function updateJob(id, patch) {
   const j = jobs.get(id);
   if (j) Object.assign(j, patch);
@@ -100,6 +106,7 @@ export function failJob(id, message) {
 export default {
   createJob,
   getJob,
+  listJobs,
   updateJob,
   jobProgress,
   cancelJob,

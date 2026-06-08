@@ -93,6 +93,22 @@ export interface CrawlHistoryResponse {
   history: CrawlRun[];
 }
 
+export interface ActiveCrawl {
+  id: string;
+  listingUrls: string[];
+  phase: string; // starting | discovering | scraping
+  found: number;
+  total: number; // selected to scrape this run
+  scraped: number;
+  failed: number;
+  current: string | null; // url being scraped now
+  startedAt: number | null; // epoch ms
+}
+
+export interface ActiveCrawlsResponse {
+  active: ActiveCrawl[];
+}
+
 // ── Scheduler ────────────────────────────────────────────────────────────────
 export interface SchedulerAutoProfile {
   fileName: string;

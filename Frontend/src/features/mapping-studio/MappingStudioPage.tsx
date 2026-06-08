@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { useLayout } from '@/components/layout/layout-context';
 import { useProfiles, useRunProfile } from '@/hooks/useApi';
-import { useScrapeLock, formatRemaining } from '@/hooks/useScrapeLock';
+import { useScrapeLock } from '@/hooks/useScrapeLock';
 import type { ProfileListItem } from '@/types/api';
 import { useSelectorBridge } from './useSelectorBridge';
 import { PagePreview } from './PagePreview';
@@ -512,7 +512,7 @@ function UrlStep({
                 loading={run.isPending}
                 disabled={lock.locked || matchedProfile.listingUrls.length === 0}
               >
-                {lock.locked ? `Scraping… ${formatRemaining(lock.remainingMs)}` : 'Scrape new products'}
+                {lock.locked ? 'Scraping…' : 'Scrape new products'}
               </Button>
               <Button size="sm" variant="secondary" onClick={onOverride}>
                 Override (rebuild profile)

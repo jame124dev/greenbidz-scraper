@@ -44,6 +44,26 @@ export function useCrawlHistory(limit = 100) {
   });
 }
 
+export function useActiveCrawls() {
+  return useQuery({
+    queryKey: queryKeys.activeCrawls,
+    queryFn: api.getActiveCrawls,
+    // Live progress: poll while the page is open.
+    refetchInterval: 2500,
+  });
+}
+
+export function useCancelScrape() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.cancelScrape(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: queryKeys.activeCrawls });
+      qc.invalidateQueries({ queryKey: ['crawl-history'] });
+    },
+  });
+}
+
 export function useRunScrape() {
   const qc = useQueryClient();
   return useMutation({
@@ -52,6 +72,7 @@ export function useRunScrape() {
       qc.invalidateQueries({ queryKey: queryKeys.state });
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: ['crawl-history'] });
+      qc.invalidateQueries({ queryKey: queryKeys.activeCrawls });
     },
   });
 }
@@ -71,6 +92,7 @@ export function useRunProfile() {
       qc.invalidateQueries({ queryKey: ['crawl-history'] });
       qc.invalidateQueries({ queryKey: ['products'] });
       qc.invalidateQueries({ queryKey: queryKeys.state });
+      qc.invalidateQueries({ queryKey: queryKeys.activeCrawls });
     },
   });
 }

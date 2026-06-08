@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { ErrorState, TableSkeleton, EmptyState } from '@/components/ui/states';
 import { useProfiles, useRunProfile } from '@/hooks/useApi';
-import { useScrapeLock, formatRemaining } from '@/hooks/useScrapeLock';
+import { useScrapeLock } from '@/hooks/useScrapeLock';
 import type { ProfileListItem } from '@/types/api';
 import { timeAgo, timeUntil } from '@/lib/format';
 import { ProfileSettingsDrawer } from './ProfileSettingsDrawer';
@@ -90,7 +90,7 @@ function ProfileRow({
   onMapCategories: () => void;
 }) {
   const run = useRunProfile();
-  const { locked, remainingMs, lock } = useScrapeLock(p.fileName);
+  const { locked, lock } = useScrapeLock(p.fileName);
   const canRun = p.listingUrls.length > 0 && !locked;
 
   const onRun = (e: React.MouseEvent) => {
@@ -157,7 +157,7 @@ function ProfileRow({
                   : 'No listing URLs on this profile'
             }
           >
-            {locked ? `Scraping… ${formatRemaining(remainingMs)}` : 'Scrape new'}
+            {locked ? 'Scraping…' : 'Scrape new'}
           </Button>
           <Button
             size="sm"

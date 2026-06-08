@@ -6,3 +6,4 @@ logs/
 .DS_Store
 npm-debug.log*
 .proxy-cache/
+.cache/

@@ -18,7 +18,7 @@ import {
   useRunProfile,
   useUpdateProfileSettings,
 } from '@/hooks/useApi';
-import { useScrapeLock, formatRemaining } from '@/hooks/useScrapeLock';
+import { useScrapeLock } from '@/hooks/useScrapeLock';
 import type { ProfileListItem, ScrapeMode } from '@/types/api';
 import { formatDate, timeAgo, timeUntil } from '@/lib/format';
 
@@ -119,7 +119,7 @@ export function ProfileSettingsDrawer({
                 : 'No listing URLs on this profile'
           }
         >
-          {scrapeLock.locked ? `Scraping… ${formatRemaining(scrapeLock.remainingMs)}` : 'Scrape now'}
+          {scrapeLock.locked ? 'Scraping…' : 'Scrape now'}
         </Button>
         <div className="ml-auto">
           {confirmDelete ? (

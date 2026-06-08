@@ -276,16 +276,16 @@ export async function runCrawlForListing(listingUrl, options = {}) {
     // Apply the per-run limit: scrape only the first N unscraped products.
     let targets = [...toScrape];
     if (limit && limit > 0) targets = targets.slice(0, limit);
-    scrapedCount = targets.length;
+    const selectedCount = targets.length; // attempted this run (capped by limit)
 
-    if (limit && limit > 0 && toScrape.size > targets.length) {
+    if (limit && limit > 0 && toScrape.size > selectedCount) {
       logger.info(
-        `⏳ Scraping ${targets.length} of ${toScrape.size} new products this run ` +
-          `(${toScrape.size - targets.length} queued for next run).`,
+        `⏳ Scraping ${selectedCount} of ${toScrape.size} new products this run ` +
+          `(${toScrape.size - selectedCount} queued for next run).`,
       );
     }
 
-    onProgress?.({ phase: 'discovered', found, total: targets.length });
+    onProgress?.({ phase: 'discovered', found, total: selectedCount });
 
     for (const url of targets) {
       if (options.shouldStop?.()) {
@@ -295,8 +295,10 @@ export async function runCrawlForListing(listingUrl, options = {}) {
       onProgress?.({ phase: 'scraping', current: url });
       // eslint-disable-next-line no-await-in-loop
       const result = await processProductUrl(url, browser, opts(options));
-      if (result.status === 'failed') failed += 1;
-      if (result.status === 'no-mapping') missingMapping += 1;
+      // Count only products actually scraped & saved (not merely selected).
+      if (result.status === 'saved') scrapedCount += 1;
+      else if (result.status === 'failed') failed += 1;
+      else if (result.status === 'no-mapping') missingMapping += 1;
       onProgress?.({ phase: 'item-done', ok: result.status === 'saved' });
     }
 
@@ -378,8 +380,8 @@ async function runApiCrawlForListing(listingUrl, apiProfile, start, options = {}
     // Apply the per-run limit (number of new products to add this run).
     let targets = [...toScrape];
     if (limit && limit > 0) targets = targets.slice(0, limit);
-    scrapedCount = targets.length;
-    onProgress?.({ phase: 'discovered', found, total: targets.length });
+    const selectedCount = targets.length; // attempted this run
+    onProgress?.({ phase: 'discovered', found, total: selectedCount });
 
     for (const url of targets) {
       if (options.shouldStop?.()) {
@@ -393,7 +395,9 @@ async function runApiCrawlForListing(listingUrl, apiProfile, start, options = {}
         forcedProfile: { fileName, profile },
         preExtracted: data,
       });
-      if (result.status === 'failed') failed += 1;
+      // Count only products actually scraped & saved.
+      if (result.status === 'saved') scrapedCount += 1;
+      else if (result.status === 'failed') failed += 1;
       onProgress?.({ phase: 'item-done', ok: result.status === 'saved' });
     }
 

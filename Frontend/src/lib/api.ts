@@ -3,6 +3,7 @@
 // Override with VITE_API_BASE_URL in the Frontend env.
 
 import type {
+  ActiveCrawlsResponse,
   CrawlHistoryResponse,
   DeleteProfileResponse,
   DomProfile,
@@ -110,6 +111,8 @@ export const api = {
 
   getCrawlHistory: (limit = 100) =>
     request<CrawlHistoryResponse>(`/crawl-history?limit=${limit}`),
+
+  getActiveCrawls: () => request<ActiveCrawlsResponse>('/active-crawls'),
 
   runScrape: (listingUrl: string) =>
     request<{ ok: boolean; summary: unknown; counts: unknown }>('/scrape', {
