@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node main.js",
     "build": "npm install && npx puppeteer browsers install chrome",
+    "postinstall": "node ./scripts/ensure-chrome.mjs",
     "setup": "node setup.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo:all",
