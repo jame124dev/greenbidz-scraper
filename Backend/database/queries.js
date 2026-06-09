@@ -377,6 +377,17 @@ export async function listRecentProducts({
   const st = scrapedOnly ? 'scraped' : status;
   if (st === 'scraped') where.scraped = true;
   else if (st === 'unscraped') where.scraped = false;
+  else if (st === 'incomplete') {
+    // Scraped but missing core data (no title, no price, or no images) — these
+    // are the candidates for a rescrape.
+    where.scraped = true;
+    where[Op.and] = [
+      literal(
+        "(title IS NULL OR title = '' OR price IS NULL " +
+          "OR images_remote_urls IS NULL OR JSON_LENGTH(images_remote_urls) = 0)",
+      ),
+    ];
+  }
   if (profile) where.profile_file_name = profile;
   const q = String(search || '').trim();
   if (q) {

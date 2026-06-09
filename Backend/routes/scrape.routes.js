@@ -8,12 +8,16 @@ import {
   scrapeCancel,
   urlPattern,
   proxyPage,
+  rescrape,
+  testProfile,
 } from '../controllers/scrape.controller.js';
 
 const router = Router();
 router.post('/analyze', asyncHandler(analyze));
 router.post('/detect', asyncHandler(detect));
 router.post('/scrape', asyncHandler(runScrape));
+router.post('/rescrape', asyncHandler(rescrape));
+router.post('/test-profile', asyncHandler(testProfile));
 router.get('/scrape-progress', asyncHandler(scrapeProgress));
 router.post('/scrape-cancel', asyncHandler(scrapeCancel));
 router.post('/url-pattern', asyncHandler(urlPattern));

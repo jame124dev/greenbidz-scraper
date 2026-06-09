@@ -15,6 +15,10 @@ import { detectApiConfig } from '../detectors/api-detector.js';
 import { renderProxyPage } from '../web/proxy/page-proxy.js';
 import { getJob, cancelJob } from '../web/jobs.js';
 import { runCrawlForListing } from '../scheduler/job-runner.js';
+import { startRescrapeJob } from '../services/rescrapeJob.js';
+import { crawlListingPage } from '../scrapers/listing-crawler.js';
+import { scrapeProduct } from '../scrapers/product-extractor.js';
+import { launchBrowser, closeBrowser } from '../config/puppeteer.js';
 import { countProducts } from '../database/queries.js';
 import { discoverSampleProductUrls, buildDraftProfile } from '../services/discovery.js';
 import { sendHtml } from '../lib/http.js';
@@ -184,6 +188,72 @@ export async function urlPattern(req, res) {
       ? { fileName: existing.fileName, profileName: existing.profile?.profileName }
       : null,
   });
+}
+
+/**
+ * POST /api/test-profile { profile, limit } — crawl the profile's listing for a
+ * few product URLs and scrape them with the (unsaved) profile, returning the
+ * extracted fields so the admin can confirm the mapping before saving. Nothing
+ * is written to the DB. `required` flags are ignored so partial extractions
+ * still come back (the UI shows what was/wasn't found).
+ */
+export async function testProfile(req, res) {
+  const { profile, limit = 3 } = req.body || {};
+  if (!profile || !Array.isArray(profile.listingUrls) || !profile.listingUrls.length) {
+    return res.status(400).json({ error: 'A profile with at least one listingUrl is required.' });
+  }
+  const n = Math.max(1, Math.min(5, Number(limit) || 3));
+
+  // Don't throw on missing required fields during a test — show partial data.
+  const testProfileCfg = {
+    ...profile,
+    fields: Object.fromEntries(
+      Object.entries(profile.fields || {}).map(([k, v]) => [k, { ...v, required: false }]),
+    ),
+  };
+
+  const browser = await launchBrowser();
+  try {
+    const listingUrl = profile.listingUrls[0];
+    const { urls } = await crawlListingPage(listingUrl, { pagination: profile.pagination, browser });
+    const sample = urls.slice(0, n);
+    const results = [];
+    for (const url of sample) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const data = await scrapeProduct(url, testProfileCfg, { browser });
+        results.push({
+          url,
+          ok: true,
+          title: data.title,
+          price: data.price,
+          priceRaw: data.priceRaw,
+          description: data.description ? String(data.description).slice(0, 300) : null,
+          images: (data.imagesRemoteUrls || []).slice(0, 6),
+          fields: data.rawData || {},
+        });
+      } catch (err) {
+        results.push({ url, ok: false, error: err.message });
+      }
+    }
+    return res.json({ listingUrl, found: urls.length, tested: results.length, results });
+  } catch (err) {
+    logger.warn(`Test-profile failed: ${err.message}`);
+    return res.status(502).json({ error: `Could not test this profile: ${err.message}` });
+  } finally {
+    await closeBrowser(browser);
+  }
+}
+
+/** POST /api/rescrape { ids } — re-fetch + overwrite the given products (background). */
+export async function rescrape(req, res) {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) {
+    return res.status(400).json({ error: 'ids (non-empty array) required.' });
+  }
+  const jobId = startRescrapeJob(ids);
+  logger.info(`🔁 Rescrape started for ${ids.length} product(s) via UI.`);
+  res.status(202).json({ ok: true, jobId, count: ids.length });
 }
 
 /** GET /api/proxy-page?url= — sanitized, same-origin snapshot for the Studio iframe. */

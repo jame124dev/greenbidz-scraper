@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/http.js';
 import {
   listProfiles,
+  getProfileConfig,
   saveProfile,
   updateSettings,
   removeProfile,
@@ -10,6 +11,7 @@ import {
 
 const router = Router();
 router.get('/profiles', asyncHandler(listProfiles));
+router.get('/profile', asyncHandler(getProfileConfig));
 router.post('/save-profile', asyncHandler(saveProfile));
 router.post('/profile-settings', asyncHandler(updateSettings));
 router.post('/delete-profile', asyncHandler(removeProfile));

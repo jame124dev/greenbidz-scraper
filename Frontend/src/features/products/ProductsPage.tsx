@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Package, ImageIcon, UploadCloud, ChevronLeft, ChevronRight, CheckCircle2, Trash2 } from 'lucide-react';
+import { Search, Package, ImageIcon, UploadCloud, ChevronLeft, ChevronRight, CheckCircle2, Trash2, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -8,14 +9,14 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table';
 import { ErrorState, TableSkeleton, EmptyState } from '@/components/ui/states';
-import { useProducts, useDeleteProducts, useProfiles } from '@/hooks/useApi';
+import { useProducts, useDeleteProducts, useProfiles, useRescrape } from '@/hooks/useApi';
 import type { Product } from '@/types/api';
 import { formatPrice, timeAgo } from '@/lib/format';
 import { productImageUrl } from '@/lib/productImage';
 import { cn } from '@/lib/cn';
 import { ProductDetailDrawer } from './ProductDetailDrawer';
 
-type Filter = 'all' | 'scraped' | 'unscraped';
+type Filter = 'all' | 'scraped' | 'unscraped' | 'incomplete';
 const PAGE_SIZE = 50;
 
 export function ProductsPage() {
@@ -46,6 +47,18 @@ export function ProductsPage() {
     search: search || undefined,
   });
   const del = useDeleteProducts();
+  const rescrape = useRescrape();
+
+  const onRescrapeSelected = () => {
+    const ids = [...selectedIds];
+    rescrape.mutate(ids, {
+      onSuccess: (r) => {
+        toast.success(`Rescraping ${r.count} product(s) — see Crawl History.`);
+        setSelectedIds(new Set());
+      },
+      onError: (e) => toast.error((e as Error).message),
+    });
+  };
 
   // Profiles for the filter dropdown (all profiles, not just the current page).
   const profileNames = (useProfiles().data?.profiles ?? []).map((p) => p.fileName);
@@ -80,13 +93,24 @@ export function ProductsPage() {
         actions={
           <div className="flex items-center gap-2">
             {selectedIds.size > 0 && (
-              <Button
-                variant="danger"
-                icon={<Trash2 className="h-4 w-4" />}
-                onClick={() => setShowDelete(true)}
-              >
-                Delete ({selectedIds.size})
-              </Button>
+              <>
+                <Button
+                  variant="danger"
+                  icon={<Trash2 className="h-4 w-4" />}
+                  onClick={() => setShowDelete(true)}
+                >
+                  Delete ({selectedIds.size})
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon={<RefreshCw className="h-4 w-4" />}
+                  loading={rescrape.isPending}
+                  onClick={onRescrapeSelected}
+                  title="Re-fetch and overwrite the selected products"
+                >
+                  Rescrape ({selectedIds.size})
+                </Button>
+              </>
             )}
             <Button
               icon={<UploadCloud className="h-4 w-4" />}
@@ -125,7 +149,7 @@ export function ProductsPage() {
             ))}
           </select>
           <div className="flex items-center gap-1 rounded-lg border border-line bg-panel2 p-1">
-            {(['all', 'scraped', 'unscraped'] as Filter[]).map((f) => (
+            {(['all', 'scraped', 'unscraped', 'incomplete'] as Filter[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}

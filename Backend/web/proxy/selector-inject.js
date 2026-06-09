@@ -21,10 +21,11 @@
  */
 
 export const SELECTOR_STYLE = `
-  .__sx-hover { outline: 2px solid #38bdf8 !important; outline-offset: -2px !important;
-    cursor: crosshair !important; background: rgba(56,189,248,0.08) !important; }
   .__sx-picked { outline: 2px solid #22c55e !important; outline-offset: -2px !important;
     background: rgba(34,197,94,0.10) !important; }
+  /* Declared AFTER picked so the blue hover outline wins even on a re-picked element. */
+  .__sx-hover { outline: 2px solid #38bdf8 !important; outline-offset: -2px !important;
+    cursor: crosshair !important; background: rgba(56,189,248,0.08) !important; }
   .__sx-badge { position: absolute; z-index: 2147483647; font: 600 11px/1.4 system-ui, sans-serif;
     color: #04210f; background: #22c55e; padding: 1px 6px; border-radius: 4px;
     pointer-events: none; transform: translateY(-100%); white-space: nowrap; }
@@ -248,6 +249,14 @@ export const SELECTOR_SCRIPT = `
       items: items,
       count: items.length,
     });
+
+    // Single-pick fields are one-and-done: disarm so the highlight/cursor reset
+    // and the next "Pick"/"Re-pick" arms cleanly. Multi (images) stays armed.
+    if (!armed.multi) {
+      armed = null;
+      document.documentElement.classList.remove('__sx-armed');
+      if (lastHover) { lastHover.classList.remove('__sx-hover'); lastHover = null; }
+    }
   }, true);
 
   window.addEventListener('scroll', repaintBadges, true);
@@ -260,6 +269,8 @@ export const SELECTOR_SCRIPT = `
     if (d.type === 'arm') {
       armed = { field: d.field, color: d.color, multi: !!d.multi };
       document.documentElement.classList.add('__sx-armed');
+      // Start hover fresh so the blue outline tracks the cursor immediately.
+      if (lastHover) { lastHover.classList.remove('__sx-hover'); lastHover = null; }
     } else if (d.type === 'disarm') {
       armed = null;
       document.documentElement.classList.remove('__sx-armed');

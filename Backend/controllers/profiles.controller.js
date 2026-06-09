@@ -77,6 +77,20 @@ export async function listProfiles(req, res) {
   res.json({ profiles });
 }
 
+/** GET /api/profile?fileName= — full saved profile config (for editing in the Studio). */
+export async function getProfileConfig(req, res) {
+  const raw = req.query.fileName;
+  if (!raw || typeof raw !== 'string') {
+    return res.status(400).json({ error: 'fileName required.' });
+  }
+  const fn = raw.endsWith('.json') ? raw : `${raw}.json`;
+  if (!(await profileExists(fn))) {
+    return res.status(404).json({ error: `Profile not found: ${fn}` });
+  }
+  const config = await readProfile(fn);
+  res.json({ fileName: fn, config });
+}
+
 /** POST /api/save-profile { fileName, profile, runNow? } */
 export async function saveProfile(req, res) {
   const body = req.body || {};

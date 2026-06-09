@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -28,6 +28,7 @@ import { FieldPanel } from './FieldPanel';
 import { ReviewStep } from './ReviewStep';
 import {
   emptyDraft,
+  profileToDraft,
   generalizeNextSelector,
   generalizeProductLink,
   IMAGES_KEY,
@@ -62,8 +63,11 @@ function normHost(url: string): string {
 }
 
 export function MappingStudioPage() {
+  const [searchParams] = useSearchParams();
+  const editFileName = searchParams.get('edit'); // present → editing an existing profile
   const [draft, setDraft] = useState<MappingDraft>(emptyDraft);
   const [step, setStep] = useState(0);
+  const hydratedRef = useRef(false); // edit-mode prefill happens once
   const [armedKey, setArmedKey] = useState<string | null>(null);
   const [loadingPage, setLoadingPage] = useState(false);
   const [hoverText, setHoverText] = useState<string | null>(null);
@@ -88,6 +92,22 @@ export function MappingStudioPage() {
   const update = useCallback((patch: Partial<MappingDraft>) => {
     setDraft((d) => ({ ...d, ...patch }));
   }, []);
+
+  // Edit mode: load the saved profile once and hydrate the draft, then jump to
+  // the Fields step (or Listing if no sample product URL is stored).
+  useEffect(() => {
+    if (!editFileName || hydratedRef.current) return;
+    hydratedRef.current = true;
+    api
+      .getProfileConfig(editFileName)
+      .then(({ config }) => {
+        setDraft(profileToDraft(config));
+        setStep(config.sampleProductUrl ? 2 : 1);
+      })
+      .catch(() => {
+        /* fall back to a blank draft */
+      });
+  }, [editFileName]);
 
   // ── picking ──────────────────────────────────────────────────────────────────
   const onPicked = useCallback(
@@ -334,8 +354,12 @@ export function MappingStudioPage() {
   return (
     <>
       <PageHeader
-        title="New Scraper — Visual Mapping Studio"
-        description="Load a page, click elements to map them to product fields, then save a scraping profile."
+        title={editFileName ? 'Edit Scraper — Field Mapping' : 'New Scraper — Visual Mapping Studio'}
+        description={
+          editFileName
+            ? 'Re-pick or override field selectors for this profile, then save to overwrite it.'
+            : 'Load a page, click elements to map them to product fields, then save a scraping profile.'
+        }
       />
 
       <Stepper step={step} />
@@ -393,7 +417,7 @@ export function MappingStudioPage() {
           </div>
         )}
 
-        {step === 3 && <ReviewStep draft={draft} onChange={update} />}
+        {step === 3 && <ReviewStep draft={draft} onChange={update} editFileName={editFileName} />}
       </div>
 
       {/* Footer nav */}

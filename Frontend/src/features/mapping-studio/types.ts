@@ -256,6 +256,7 @@ export function buildProfile(draft: MappingDraft, now: string): DomProfile {
     scrapeMode: draft.scrapeMode,
     scrapeLimit: draft.scrapeLimit,
     priceCurrency: draft.priceCurrency,
+    ...(draft.sampleProductUrl ? { sampleProductUrl: draft.sampleProductUrl } : {}),
     listingUrls: draft.listingUrl ? [draft.listingUrl] : [],
     pagination: {
       ...(draft.productLinkSelector ? { productLinkSelector: draft.productLinkSelector } : {}),
@@ -272,6 +273,60 @@ export function buildProfile(draft: MappingDraft, now: string): DomProfile {
     createdAt: now,
     updatedAt: now,
     usageCount: 0,
+  };
+}
+
+/** Inverse of buildProfile: hydrate an editable draft from a saved profile. */
+export function profileToDraft(config: DomProfile): MappingDraft {
+  const f = config.fields || {};
+  const builtinKeys = new Set(BUILTIN_FIELDS.map((b) => b.key));
+
+  // Built-ins first (so the panel order is stable), pre-filled from saved fields.
+  const fields: FieldDraft[] = BUILTIN_FIELDS.map((b) => {
+    const saved = f[b.key];
+    return saved
+      ? {
+          ...b,
+          type: (saved.type as FieldType) || b.type,
+          required: saved.required ?? b.required,
+          selector: saved.selector,
+          xpath: saved.xpath,
+          sampleValue: saved.sampleValue,
+        }
+      : { ...b };
+  });
+  // Then any custom fields saved on the profile.
+  for (const [key, v] of Object.entries(f)) {
+    if (builtinKeys.has(key)) continue;
+    fields.push({
+      key,
+      label: key,
+      type: (v.type as FieldType) || 'text',
+      required: !!v.required,
+      builtin: false,
+      selector: v.selector,
+      xpath: v.xpath,
+      sampleValue: v.sampleValue,
+    });
+  }
+
+  const pag = config.pagination || {};
+  const imagesSel = config.selectors?.images;
+  return {
+    listingUrl: config.listingUrls?.[0] || '',
+    sampleProductUrl: config.sampleProductUrl || '',
+    productLinkSelector: pag.productLinkSelector,
+    nextSelector: pag.nextSelector,
+    fields,
+    images: imagesSel ? [{ selector: imagesSel, src: null }] : [],
+    profileName: config.profileName || '',
+    domain: config.domain || '',
+    urlPattern: config.urlPattern || '',
+    productUrlPattern: pag.productUrlPattern,
+    downloadImages: config.downloadImages ?? true,
+    scrapeMode: config.scrapeMode || 'auto',
+    scrapeLimit: config.scrapeLimit ?? null,
+    priceCurrency: config.priceCurrency || 'USD',
   };
 }
 

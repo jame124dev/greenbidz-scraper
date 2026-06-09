@@ -1,8 +1,10 @@
-import { ExternalLink, ImageOff } from 'lucide-react';
+import { ExternalLink, ImageOff, RefreshCw } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Drawer } from '@/components/ui/Drawer';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { LoadingState, ErrorState } from '@/components/ui/states';
-import { useProduct } from '@/hooks/useApi';
+import { useProduct, useRescrape } from '@/hooks/useApi';
 import type { Product } from '@/types/api';
 import { formatDate, formatPrice } from '@/lib/format';
 import { productImageUrls } from '@/lib/productImage';
@@ -17,6 +19,7 @@ export function ProductDetailDrawer({
   // We already have the list row; fetch full detail (raw_data, description) by id.
   const detail = useProduct(product?.id ?? null);
   const full = detail.data?.product ?? product ?? undefined;
+  const rescrape = useRescrape();
 
   return (
     <Drawer
@@ -46,14 +49,31 @@ export function ProductDetailDrawer({
             <Fact label="Attempts" value={full.scrape_attempts ?? '—'} />
           </div>
 
-          <a
-            href={full.product_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-sky2 hover:underline"
-          >
-            Open source page <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href={full.product_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-sky2 hover:underline"
+            >
+              Open source page <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={<RefreshCw className="h-3.5 w-3.5" />}
+              loading={rescrape.isPending}
+              onClick={() =>
+                rescrape.mutate([full.id], {
+                  onSuccess: () => toast.success('Rescraping — see Crawl History.'),
+                  onError: (e) => toast.error((e as Error).message),
+                })
+              }
+              title="Re-fetch and overwrite this product"
+            >
+              Rescrape
+            </Button>
+          </div>
 
           {full.last_error && (
             <div className="rounded-lg border border-danger/30 bg-red-900/20 p-3 text-xs text-red-300">

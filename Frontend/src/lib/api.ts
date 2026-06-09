@@ -14,6 +14,7 @@ import type {
   ProfilesResponse,
   RunProfileResponse,
   SaveProfileResponse,
+  TestProfileResponse,
   SchedulerStatus,
   ScrapeProgressResponse,
   StateResponse,
@@ -92,7 +93,7 @@ export interface ProductsQuery {
   limit?: number;
   offset?: number;
   scrapedOnly?: boolean;
-  status?: 'all' | 'scraped' | 'unscraped';
+  status?: 'all' | 'scraped' | 'unscraped' | 'incomplete';
   profile?: string;
   search?: string;
 }
@@ -116,6 +117,12 @@ export const api = {
 
   deleteProducts: (ids: number[]) =>
     request<{ ok: boolean; deleted: number }>('/products/delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
+  rescrape: (ids: number[]) =>
+    request<{ ok: boolean; jobId: string; count: number }>('/rescrape', {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
@@ -153,6 +160,15 @@ export const api = {
     }),
 
   getProfiles: () => request<ProfilesResponse>('/profiles'),
+
+  getProfileConfig: (fileName: string) =>
+    request<{ fileName: string; config: DomProfile }>(`/profile?fileName=${encodeURIComponent(fileName)}`),
+
+  testProfile: (profile: DomProfile, limit = 3) =>
+    request<TestProfileResponse>('/test-profile', {
+      method: 'POST',
+      body: JSON.stringify({ profile, limit }),
+    }),
 
   runProfile: (fileName: string) =>
     request<RunProfileResponse>('/run-profile', {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Save,
   Play,
@@ -8,6 +9,7 @@ import {
   Images,
   AlertCircle,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { Drawer } from '@/components/ui/Drawer';
 import { Badge } from '@/components/ui/Badge';
@@ -29,6 +31,7 @@ export function ProfileSettingsDrawer({
   profile: ProfileListItem | null;
   onClose: () => void;
 }) {
+  const navigate = useNavigate();
   const update = useUpdateProfileSettings();
   const run = useRunProfile();
   const del = useDeleteProfile();
@@ -121,6 +124,19 @@ export function ProfileSettingsDrawer({
         >
           {scrapeLock.locked ? 'Scraping…' : 'Scrape now'}
         </Button>
+        {profile && profile.source !== 'api' && (
+          <Button
+            variant="ghost"
+            icon={<Pencil className="h-3.5 w-3.5" />}
+            onClick={() => {
+              onClose();
+              navigate(`/scraper/new?edit=${encodeURIComponent(profile.fileName)}`);
+            }}
+            title="Edit field mapping (overwrites this profile on save)"
+          >
+            Edit fields
+          </Button>
+        )}
         <div className="ml-auto">
           {confirmDelete ? (
             <div className="flex items-center gap-2">

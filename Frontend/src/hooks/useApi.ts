@@ -37,6 +37,18 @@ export function useDeleteProducts() {
   });
 }
 
+export function useRescrape() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.rescrape(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: queryKeys.activeCrawls });
+      qc.invalidateQueries({ queryKey: ['crawl-history'] });
+    },
+  });
+}
+
 export function useCrawlHistory(limit = 100) {
   return useQuery({
     queryKey: queryKeys.crawlHistory(limit),

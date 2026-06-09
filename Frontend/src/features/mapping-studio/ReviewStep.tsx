@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2, Loader2, Play } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Play, FlaskConical, ImageOff } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -16,6 +16,8 @@ import { ScrapeProgress } from './ScrapeProgress';
 interface Props {
   draft: MappingDraft;
   onChange: (patch: Partial<MappingDraft>) => void;
+  /** When set, Save overwrites this existing profile instead of deriving a new file. */
+  editFileName?: string | null;
 }
 
 /** Mirrors backend validateProfile so the user sees problems before saving. */
@@ -37,7 +39,7 @@ function validate(draft: MappingDraft): string[] {
   return errs;
 }
 
-export function ReviewStep({ draft, onChange }: Props) {
+export function ReviewStep({ draft, onChange, editFileName }: Props) {
   const [savedAs, setSavedAs] = useState<string | null>(null);
   const [runStarted, setRunStarted] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -73,13 +75,23 @@ export function ReviewStep({ draft, onChange }: Props) {
         { ...draft, productUrlPattern: draft.productUrlPattern },
         new Date().toISOString(),
       );
-      return api.saveProfile(null, profile, runNow);
+      // editFileName set → overwrite that exact profile; else backend derives it.
+      return api.saveProfile(editFileName ?? null, profile, runNow);
     },
     onSuccess: (res) => {
       setSavedAs(res.fileName);
       setRunStarted(!!res.runStarted);
       setJobId(res.jobId ?? null);
     },
+  });
+
+  // Advisory test: scrape ~3 sample products with the current mapping (no save).
+  const test = useMutation({
+    mutationFn: () =>
+      api.testProfile(
+        buildProfile({ ...draft, productUrlPattern: draft.productUrlPattern }, new Date().toISOString()),
+        3,
+      ),
   });
 
   const errors = validate(draft);
@@ -254,6 +266,92 @@ export function ReviewStep({ draft, onChange }: Props) {
           </ul>
         </div>
       )}
+
+      {/* Advisory test: confirm the mapping on a few real products before saving. */}
+      <div className="card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Test the mapping</h3>
+            <p className="text-[11px] text-muted">
+              Scrapes 3 sample products with this mapping so you can confirm the fields before saving.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={errors.length > 0 || test.isPending}
+            icon={test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+            onClick={() => test.mutate()}
+          >
+            {test.isPending ? 'Testing…' : 'Test 3 products'}
+          </Button>
+        </div>
+
+        {test.isError && (
+          <div className="mt-3 rounded-lg border border-danger/40 bg-red-900/20 p-3 text-xs text-red-300">
+            {(test.error as Error).message}
+          </div>
+        )}
+
+        {test.data && (
+          <div className="mt-3 space-y-3">
+            <p className="text-[11px] text-muted">
+              {test.data.found} product link(s) found · showing {test.data.results.length}.
+            </p>
+            {test.data.results.map((r, i) => (
+              <div key={i} className="rounded-lg border border-line bg-panel2/40 p-3">
+                {!r.ok ? (
+                  <div className="text-xs text-danger">
+                    <span className="font-mono">{r.url}</span> — {r.error}
+                  </div>
+                ) : (
+                  <div className="flex gap-3">
+                    {r.images && r.images[0] ? (
+                      <img
+                        src={r.images[0]}
+                        alt=""
+                        className="h-16 w-16 shrink-0 rounded border border-line object-cover"
+                        onError={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border border-line bg-bg text-muted">
+                        <ImageOff className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1 space-y-1 text-xs">
+                      <div className="truncate font-medium text-ink">
+                        {r.title || <span className="text-warn">⚠ no title</span>}
+                      </div>
+                      <div className="text-muted">
+                        Price: <span className="text-ink">{r.priceRaw ?? r.price ?? <span className="text-warn">—</span>}</span>
+                        {r.images ? <span className="ml-3">Images: {r.images.length}</span> : null}
+                      </div>
+                      {r.fields && Object.keys(r.fields).length > 0 && (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
+                          {Object.entries(r.fields)
+                            .filter(([k]) => !['pageTitle'].includes(k))
+                            .slice(0, 10)
+                            .map(([k, v]) => (
+                              <span key={k}>
+                                <span className="text-muted/70">{k}:</span>{' '}
+                                <span className={v ? 'text-ink' : 'text-warn'}>
+                                  {v ? String(v).slice(0, 40) : '—'}
+                                </span>
+                              </span>
+                            ))}
+                        </div>
+                      )}
+                      <a href={r.url} target="_blank" rel="noreferrer" className="inline-block text-[11px] text-sky2 hover:underline">
+                        view source
+                      </a>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {save.isError && (
         <div className="rounded-lg border border-danger/40 bg-red-900/20 p-3 text-xs text-red-300">

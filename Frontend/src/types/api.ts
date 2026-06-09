@@ -95,6 +95,8 @@ export interface CrawlHistoryResponse {
 
 export interface ActiveCrawl {
   id: string;
+  kind?: 'crawl' | 'rescrape';
+  label?: string | null;
   listingUrls: string[];
   phase: string; // starting | discovering | scraping
   found: number;
@@ -452,6 +454,24 @@ export interface SyncSchedulerStatus {
   targetRuns: SyncTargetRun[];
 }
 
+export interface TestProductResult {
+  url: string;
+  ok: boolean;
+  error?: string;
+  title?: string | null;
+  price?: number | string | null;
+  priceRaw?: string | null;
+  description?: string | null;
+  images?: string[];
+  fields?: Record<string, unknown>;
+}
+export interface TestProfileResponse {
+  listingUrl: string;
+  found: number;
+  tested: number;
+  results: TestProductResult[];
+}
+
 export interface RunProfileResponse {
   ok: boolean;
   runStarted: boolean;
@@ -519,6 +539,8 @@ export interface DomProfile {
   scrapeLimit: number | null;
   /** Profile-level currency for prices (optional). */
   priceCurrency?: string;
+  /** A sample product URL kept so the mapping can be re-edited in the Studio. */
+  sampleProductUrl?: string;
   listingUrls: string[];
   pagination: {
     productLinkSelector?: string;

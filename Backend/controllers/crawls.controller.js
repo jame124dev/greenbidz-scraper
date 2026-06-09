@@ -14,6 +14,8 @@ export async function getCrawlHistory(req, res) {
 export async function getActiveCrawls(req, res) {
   const active = listJobs('running').map((j) => ({
     id: j.id,
+    kind: j.kind || 'crawl', // crawl | rescrape
+    label: j.label || null, // friendly label (e.g. "Rescrape 3 product(s)")
     listingUrls: Array.isArray(j.listingUrls) ? j.listingUrls : [],
     phase: j.phase, // starting | discovering | scraping
     found: j.found || 0,

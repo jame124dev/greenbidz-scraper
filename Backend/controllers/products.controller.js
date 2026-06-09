@@ -22,7 +22,7 @@ async function profileCurrencyMap() {
 export async function listProducts(req, res) {
   const limit = Number.parseInt(req.query.limit, 10) || 50;
   const offset = Number.parseInt(req.query.offset, 10) || 0;
-  const status = ['scraped', 'unscraped'].includes(req.query.status) ? req.query.status : 'all';
+  const status = ['scraped', 'unscraped', 'incomplete'].includes(req.query.status) ? req.query.status : 'all';
   const scrapedOnly = req.query.scrapedOnly === 'true';
   const profile = req.query.profile || undefined;
   const search = req.query.search || undefined;

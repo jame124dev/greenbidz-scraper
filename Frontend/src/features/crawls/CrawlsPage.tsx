@@ -146,8 +146,8 @@ export function CrawlsPage() {
 
 function ActiveCrawlRow({ crawl }: { crawl: ActiveCrawl }) {
   const cancel = useCancelScrape();
-  const host = crawl.listingUrls[0] ? hostFromUrl(crawl.listingUrls[0]) : 'crawl';
-  const more = crawl.listingUrls.length > 1 ? ` +${crawl.listingUrls.length - 1}` : '';
+  const host = crawl.label || (crawl.listingUrls[0] ? hostFromUrl(crawl.listingUrls[0]) : 'crawl');
+  const more = !crawl.label && crawl.listingUrls.length > 1 ? ` +${crawl.listingUrls.length - 1}` : '';
   const phaseLabel =
     crawl.phase === 'scraping'
       ? `Scraping ${crawl.scraped}/${crawl.total || '?'}`
