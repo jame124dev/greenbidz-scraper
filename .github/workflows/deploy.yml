@@ -1,0 +1,27 @@
+name: Auto Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pull latest code and deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          key: ${{ secrets.SERVER_SSH_KEY }}
+
+          script: |
+            cd /www/wwwroot/scraper.greenbidz.com
+
+            git pull origin main
+
+            chmod +x .deploy.sh
+
+            ./deploy.sh

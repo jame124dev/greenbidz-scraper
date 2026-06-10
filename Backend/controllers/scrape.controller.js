@@ -19,6 +19,7 @@ import { startRescrapeJob } from '../services/rescrapeJob.js';
 import { crawlListingPage } from '../scrapers/listing-crawler.js';
 import { scrapeProduct } from '../scrapers/product-extractor.js';
 import { launchBrowser, closeBrowser } from '../config/puppeteer.js';
+import { htmlToText } from '../utils/html.js';
 import { countProducts } from '../database/queries.js';
 import { discoverSampleProductUrls, buildDraftProfile } from '../services/discovery.js';
 import { sendHtml } from '../lib/http.js';
@@ -215,7 +216,12 @@ export async function testProfile(req, res) {
   const browser = await launchBrowser();
   try {
     const listingUrl = profile.listingUrls[0];
-    const { urls } = await crawlListingPage(listingUrl, { pagination: profile.pagination, browser });
+    // Only the FIRST listing page — a test needs a handful of links, not the
+    // whole catalogue (no pagination), so it's fast.
+    const { urls } = await crawlListingPage(listingUrl, {
+      pagination: { ...(profile.pagination || {}), maxPages: 1 },
+      browser,
+    });
     const sample = urls.slice(0, n);
     const results = [];
     for (const url of sample) {
@@ -228,8 +234,9 @@ export async function testProfile(req, res) {
           title: data.title,
           price: data.price,
           priceRaw: data.priceRaw,
-          description: data.description ? String(data.description).slice(0, 300) : null,
-          images: (data.imagesRemoteUrls || []).slice(0, 6),
+          // Descriptions may be HTML — return clean readable text.
+          description: data.description ? htmlToText(data.description).slice(0, 1500) : null,
+          images: (data.imagesRemoteUrls || []).slice(0, 12),
           fields: data.rawData || {},
         });
       } catch (err) {

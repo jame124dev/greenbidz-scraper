@@ -12,6 +12,7 @@ import {
   matchCategory,
   SYNC_DEFAULTS,
 } from '../config/sync-config.js';
+import { htmlToText } from '../utils/html.js';
 
 /** Coerce a value to a clean array (the main API expects arrays for these). */
 function toArr(v) {
@@ -109,7 +110,8 @@ export function mapProduct({
 
   const mapped = {
     product_title: overrides.product_title ?? product.title ?? '',
-    product_content: overrides.product_content ?? product.description ?? '',
+    // Descriptions are sometimes HTML — send clean readable text to the main site.
+    product_content: htmlToText(overrides.product_content ?? product.description ?? ''),
     product_type: overrides.product_type ?? SYNC_DEFAULTS.product_type,
     product_category_ids: category ? String(category.term_id) : '',
     category_name: category ? category.name : '',

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { Modal } from '@/components/ui/Modal';
 import { useSyncMeta, useSyncSellers, useSyncCategories, usePreviewSync, useSubmitSync } from '@/hooks/useApi';
+import { htmlToText } from '@/lib/html';
 import type { SyncCategory } from '@/types/api';
 import { CategoryMappingModal } from './CategoryMappingModal';
 
@@ -127,7 +128,7 @@ export function SyncPage() {
       }
       next[r.productId] = {
         product_title: String(m.product_title ?? ''),
-        product_content: String(m.product_content ?? ''),
+        product_content: htmlToText(m.product_content ?? ''),
         price_per_unit: String(m.price_per_unit ?? ''),
         categoryId,
         subcategoryId,

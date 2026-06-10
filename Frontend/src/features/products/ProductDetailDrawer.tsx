@@ -7,6 +7,7 @@ import { LoadingState, ErrorState } from '@/components/ui/states';
 import { useProduct, useRescrape } from '@/hooks/useApi';
 import type { Product } from '@/types/api';
 import { formatDate, formatPrice } from '@/lib/format';
+import { htmlToText } from '@/lib/html';
 import { productImageUrls } from '@/lib/productImage';
 
 export function ProductDetailDrawer({
@@ -91,7 +92,7 @@ export function ProductDetailDrawer({
             <>
               {full.description && (
                 <Section title="Description">
-                  <p className="whitespace-pre-wrap text-sm text-muted">{full.description}</p>
+                  <p className="whitespace-pre-wrap text-sm text-muted">{htmlToText(full.description)}</p>
                 </Section>
               )}
               {full.raw_data != null && (

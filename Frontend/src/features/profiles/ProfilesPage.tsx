@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileCode2, Play, Plus, Settings2, AlertCircle, PauseCircle, Tags, Pencil } from 'lucide-react';
+import { FileCode2, Play, Plus, Settings2, AlertCircle, PauseCircle, Tags } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -105,7 +105,6 @@ function ProfileRow({
   onOpen: () => void;
   onMapCategories: () => void;
 }) {
-  const navigate = useNavigate();
   const run = useRunProfile();
   const { data: activeData } = useActiveCrawls();
   // Real crawl state from /api/active-crawls — true while a job for this
