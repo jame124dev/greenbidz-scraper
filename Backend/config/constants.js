@@ -71,6 +71,10 @@ export const CONSTANTS = {
   PROXY_CONTENT_WAIT_MS: intEnv(process.env.PROXY_CONTENT_WAIT_MS, 25000),
   // Quiet settle period after content appears (lets late cards/text paint).
   PROXY_SETTLE_MS: intEnv(process.env.PROXY_SETTLE_MS, 1500),
+  // After settling, keep waiting (up to this long) until the DOM stops growing,
+  // so JS-hydrated sections (e.g. a late "Specifications" block) make it into the
+  // snapshot. Resolves early once the DOM is stable, so fast pages aren't delayed.
+  PROXY_STABILIZE_MS: intEnv(process.env.PROXY_STABILIZE_MS, 6000),
   // Block image/media downloads DURING the backend render (the <img src> tags
   // stay in the snapshot and load in the user's browser via <base href>, so the
   // Studio still shows images — this just stops the backend waiting on them).

@@ -175,6 +175,44 @@ async function dismissOverlays(page) {
     .catch(() => {});
 }
 
+/**
+ * Wait until the DOM stops growing (or a budget elapses), so late JS-hydrated
+ * sections — e.g. a "Specifications" block that mounts a beat after the main
+ * content — are present before we snapshot and strip scripts. Resolves as soon
+ * as the DOM is stable for a couple of polls, so fast pages aren't delayed.
+ * Best-effort; never throws.
+ * @param {import('puppeteer').Page} page
+ * @param {object} [opts]
+ * @param {number} [opts.maxMs] - Hard cap on how long to keep waiting.
+ */
+async function waitForDomStable(page, { maxMs = 6000, interval = 400, stableRounds = 2 } = {}) {
+  await page
+    .evaluate(
+      async ({ maxMs, interval, stableRounds }) => {
+        const measure = () =>
+          document.body
+            ? `${document.body.innerHTML.length}|${document.body.querySelectorAll('*').length}`
+            : '';
+        let last = measure();
+        let stable = 0;
+        const start = Date.now();
+        while (Date.now() - start < maxMs) {
+          await new Promise((r) => setTimeout(r, interval));
+          const cur = measure();
+          if (cur === last) {
+            stable += 1;
+            if (stable >= stableRounds) return;
+          } else {
+            stable = 0;
+            last = cur;
+          }
+        }
+      },
+      { maxMs, interval, stableRounds },
+    )
+    .catch(() => {});
+}
+
 /** Best-effort close of the shared browser (e.g. on shutdown). */
 export async function closeProxyBrowser() {
   if (sharedBrowser) {
@@ -316,6 +354,11 @@ export async function renderProxyPage(pageUrl, { force = false } = {}) {
       })
       .catch(() => {});
     await new Promise((r) => setTimeout(r, CONSTANTS.PROXY_SETTLE_MS));
+
+    // Keep waiting until the DOM stops growing, so sections that hydrate a beat
+    // after the main content (e.g. a JS-rendered "Specifications" block) are
+    // captured. Resolves early when stable, so this rarely adds wall-clock.
+    await waitForDomStable(page, { maxMs: CONSTANTS.PROXY_STABILIZE_MS });
 
     // Re-run after the settle delay to catch delayed pop-ups (newsletter modals,
     // late-loading consent banners) that appear a beat after first paint.
