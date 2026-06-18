@@ -8,6 +8,7 @@ import { CrawlHistory } from './crawlHistory.js';
 import { PendingMapping } from './pendingMapping.js';
 import { Profile } from './profile.js';
 import { CategoryMapping } from './categoryMapping.js';
+import { FieldMapping } from './fieldMapping.js';
 import { SyncRun } from './syncRun.js';
 import { SyncItem } from './syncItem.js';
 import { SyncSettings } from './syncSettings.js';
@@ -24,6 +25,7 @@ export {
   PendingMapping,
   Profile,
   CategoryMapping,
+  FieldMapping,
   SyncRun,
   SyncItem,
   SyncSettings,

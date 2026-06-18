@@ -17,11 +17,13 @@ import {
   CrawlHistory,
   PendingMapping,
   CategoryMapping,
+  FieldMapping,
   SyncRun,
   SyncItem,
   SyncSettings,
 } from '../models/index.js';
 import { CONSTANTS } from '../config/constants.js';
+import { mainListingUrl } from '../config/sync-config.js';
 
 /**
  * Convert stored absolute local image paths to URL paths served by the backend
@@ -397,6 +399,7 @@ export async function listRecentProducts({
   const st = scrapedOnly ? 'scraped' : status;
   if (st === 'scraped') where.scraped = true;
   else if (st === 'unscraped') where.scraped = false;
+  else if (st === 'synced') where.synced_at = { [Op.not]: null };
   else if (st === 'incomplete') {
     // Scraped but missing core data (no title, no price, or no images) — these
     // are the candidates for a rescrape.
@@ -423,7 +426,8 @@ export async function listRecentProducts({
       'id', 'external_id', 'product_url', 'profile_file_name', 'title', 'price',
       'scraped', 'scraped_at', 'first_seen_at', 'last_seen_at', 'is_active',
       'images_local_paths', 'images_remote_urls', 'last_error',
-      'synced_at', 'main_product_id',
+      'synced_at', 'main_product_id', 'main_batch_id', 'main_site_type',
+      'main_seller_id', 'main_seller_name',
     ],
     where,
     order: [['last_seen_at', 'DESC']],
@@ -437,6 +441,7 @@ export async function listRecentProducts({
     scraped: !!r.scraped,
     is_active: !!r.is_active,
     synced: !!r.synced_at,
+    main_product_url: mainListingUrl(r.main_site_type, r.main_batch_id),
     images_local_paths: asArray(r.images_local_paths),
     images_local_urls: toLocalUrls(r.images_local_paths),
     images_remote_urls: asArray(r.images_remote_urls),
@@ -547,25 +552,152 @@ export async function saveCategoryMappings(siteType, mappings) {
   return rows.length;
 }
 
+/** List saved field mappings for a site_type. */
+export async function listFieldMappings(siteType) {
+  return FieldMapping.findAll({ where: { site_type: siteType }, raw: true });
+}
+
+/**
+ * Upsert (or clear) field mappings for a site_type. A mapping with an empty
+ * source_field is treated as "use the default" and is DELETED so the row never
+ * lingers as an empty override.
+ * @param {string} siteType
+ * @param {Array<{target_field: string, source_field?: string}>} mappings
+ * @returns {Promise<{ written: number, cleared: number }>}
+ */
+export async function saveFieldMappings(siteType, mappings) {
+  const list = Array.isArray(mappings) ? mappings : [];
+  const toWrite = [];
+  const toClear = [];
+  for (const m of list) {
+    if (!m || !m.target_field) continue;
+    const src = m.source_field ? String(m.source_field).trim() : '';
+    if (src) {
+      toWrite.push({ site_type: siteType, target_field: String(m.target_field), source_field: src, updated_at: new Date() });
+    } else {
+      toClear.push(String(m.target_field));
+    }
+  }
+  let cleared = 0;
+  if (toClear.length) {
+    cleared = await FieldMapping.destroy({ where: { site_type: siteType, target_field: { [Op.in]: toClear } } });
+  }
+  if (toWrite.length) {
+    await FieldMapping.bulkCreate(toWrite, { updateOnDuplicate: ['source_field', 'updated_at'] });
+  }
+  return { written: toWrite.length, cleared };
+}
+
+/**
+ * Distinct scraped SOURCE field keys available to map from, discovered from
+ * products' raw_data. Returns standard top-level keys plus `spec:<Label>` keys
+ * (from raw_data.specifications), each with a sample value for display.
+ * Optionally scoped to a profile or a set of product ids.
+ * @param {object} [opts]
+ * @param {string} [opts.profile]
+ * @param {number[]} [opts.productIds]
+ * @param {number} [opts.limit=400] - how many recent products to sample.
+ * @returns {Promise<Array<{ key: string, label: string, sample: string }>>}
+ */
+export async function getDistinctSourceFields({ profile, productIds, limit = 400 } = {}) {
+  const conds = ['scraped = 1', 'raw_data IS NOT NULL'];
+  const repl = {};
+  if (profile) {
+    conds.push('profile_file_name = :profile');
+    repl.profile = profile;
+  }
+  const ids = (Array.isArray(productIds) ? productIds : []).map(Number).filter(Number.isInteger);
+  if (ids.length) {
+    conds.push('id IN (:ids)');
+    repl.ids = ids;
+  }
+  const rows = await sequelize.query(
+    `SELECT raw_data FROM products WHERE ${conds.join(' AND ')} ORDER BY id DESC LIMIT :limit`,
+    { replacements: { ...repl, limit: Number(limit) }, type: QueryTypes.SELECT },
+  );
+
+  // Top-level keys already offered as bare standard sources (or not mappable) —
+  // don't also surface them as `raw:<key>` duplicates.
+  const SKIP_TOP = new Set([
+    'title', 'description', 'price', 'category', 'subcategory', 'quantity',
+    'condition', 'images', 'image', 'url', 'specifications',
+  ]);
+  const found = new Map(); // key → sample value (first non-empty seen)
+  const note = (key, value) => {
+    if (!key) return;
+    if (!found.has(key)) found.set(key, '');
+    if (!found.get(key) && value != null && value !== '') {
+      found.set(key, String(value).slice(0, 60));
+    }
+  };
+  for (const r of rows) {
+    let rd = r.raw_data;
+    if (typeof rd === 'string') {
+      try { rd = JSON.parse(rd); } catch { rd = null; }
+    }
+    if (!rd || typeof rd !== 'object') continue;
+    for (const [k, v] of Object.entries(rd)) {
+      if (k === 'specifications') {
+        let specs = v;
+        if (typeof specs === 'string') {
+          try { specs = JSON.parse(specs); } catch { specs = null; }
+        }
+        if (specs && typeof specs === 'object') {
+          for (const [label, val] of Object.entries(specs)) note(`spec:${label}`, val);
+        }
+        continue;
+      }
+      if (SKIP_TOP.has(k)) continue;
+      if (v != null && typeof v === 'object') continue; // skip nested non-spec objects
+      note(`raw:${k}`, v);
+    }
+  }
+
+  return Array.from(found.entries())
+    .map(([key, sample]) => {
+      const label = key.startsWith('spec:') ? `Spec: ${key.slice(5)}` : key.replace(/^raw:/, '');
+      return { key, label, sample };
+    })
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
 /**
  * Mark products as synced to the main site (sets synced_at = now). Optionally
- * stores the main-site product id when a 1:1 mapping is known.
+ * stores the main-site product id, batch id, and the site_type synced to — the
+ * batch id + site_type build the public listing link.
  * @param {number[]} ids
+ * @param {object} [opts]
+ * @param {Record<number,number>} [opts.mainIdByProductId]
+ * @param {Record<number,number>} [opts.batchByProductId]
+ * @param {string} [opts.siteType]
+ * @param {{ id:number, name?:string }} [opts.seller] - seller synced under (for re-sync prefill).
  * @returns {Promise<number>} rows updated
  */
-export async function markProductsSynced(ids, mainIdByProductId = {}) {
+export async function markProductsSynced(
+  ids,
+  { mainIdByProductId = {}, batchByProductId = {}, siteType, seller } = {},
+) {
   const clean = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n));
   if (!clean.length) return 0;
   const [count] = await Product.update(
     { synced_at: literal('CURRENT_TIMESTAMP') },
     { where: { id: { [Op.in]: clean } } },
   );
-  // Store the main-site product id where the response provided a mapping.
+  // Store per-product main-site identifiers where the response provided them.
   for (const id of clean) {
+    const patch = {};
     const mid = mainIdByProductId[id];
-    if (mid != null) {
+    if (mid != null) patch.main_product_id = Number(mid);
+    const bid = batchByProductId[id];
+    if (bid != null) patch.main_batch_id = Number(bid);
+    if (siteType) patch.main_site_type = String(siteType);
+    if (seller && seller.id != null) {
+      patch.main_seller_id = Number(seller.id);
+      patch.main_seller_name = seller.name ? String(seller.name) : null;
+    }
+    if (Object.keys(patch).length) {
       // eslint-disable-next-line no-await-in-loop
-      await Product.update({ main_product_id: Number(mid) }, { where: { id } });
+      await Product.update(patch, { where: { id } });
     }
   }
   return count;
@@ -671,6 +803,8 @@ export async function getProductById(id) {
   if (!row) return null;
   row.scraped = !!row.scraped;
   row.is_active = !!row.is_active;
+  row.synced = !!row.synced_at;
+  row.main_product_url = mainListingUrl(row.main_site_type, row.main_batch_id);
   row.images_local_paths = asArray(row.images_local_paths);
   row.images_local_urls = toLocalUrls(row.images_local_paths);
   row.images_remote_urls = asArray(row.images_remote_urls);
@@ -992,6 +1126,9 @@ export default {
   getDistinctSourceCategories,
   listCategoryMappings,
   saveCategoryMappings,
+  listFieldMappings,
+  saveFieldMappings,
+  getDistinctSourceFields,
   countProducts,
   countProductsByDomain,
   listCrawlHistory,

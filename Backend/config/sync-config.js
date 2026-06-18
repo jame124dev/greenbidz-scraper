@@ -69,6 +69,50 @@ export const ENUMS = {
 /** Fields that block a sync if empty (per product). */
 export const REQUIRED_FIELDS = ['category', 'price'];
 
+/**
+ * Main-site target fields the admin can manually re-route to a different scraped
+ * SOURCE field (Field Mappings UI). `defaultSource` documents the scraped field
+ * the internal mapper uses by default (shown as a hint); leaving a target
+ * unmapped keeps that automatic behavior. `enum` names an ENUMS key when the
+ * value is constrained. Category is intentionally excluded — it has its own
+ * mapping flow (category_mappings).
+ */
+export const TARGET_FIELDS = [
+  { key: 'product_title', label: 'Title', defaultSource: 'title' },
+  { key: 'product_content', label: 'Description', defaultSource: 'description' },
+  { key: 'price_per_unit', label: 'Price / unit', defaultSource: 'price' },
+  { key: 'price_currency', label: 'Currency', enum: 'price_currency' },
+  { key: 'quantity', label: 'Quantity', defaultSource: 'quantity' },
+  { key: 'item_condition', label: 'Condition', enum: 'item_condition', defaultSource: 'condition' },
+  { key: 'item_grade', label: 'Grade', enum: 'item_grade' },
+  { key: 'operation_status', label: 'Operation status', enum: 'operation_status' },
+  { key: 'country', label: 'Country' },
+  { key: 'location', label: 'Location' },
+  { key: 'weight_per_unit', label: 'Weight / unit', defaultSource: 'spec:Weight' },
+  { key: 'replacement_cost_per_unit', label: 'Replacement cost / unit' },
+  { key: 'brand', label: 'Brand', defaultSource: 'spec:Manufacturer' },
+  { key: 'model', label: 'Model', defaultSource: 'spec:Model' },
+  { key: 'serial_number', label: 'Serial number', defaultSource: 'spec:Serial' },
+  { key: 'dimensions', label: 'Dimensions', defaultSource: 'spec:Dimensions' },
+  { key: 'market_metrics', label: 'Market metrics' },
+  { key: 'price_format', label: 'Price format', enum: 'price_format' },
+  { key: 'product_type', label: 'Product type', enum: 'product_type' },
+];
+
+/** Set of valid target-field keys, for validating incoming field mappings. */
+export const TARGET_FIELD_KEYS = new Set(TARGET_FIELDS.map((f) => f.key));
+
+/** Fixed (always-present) scraped source fields, independent of profile. */
+export const STANDARD_SOURCE_FIELDS = [
+  { key: 'title', label: 'Title (scraped)' },
+  { key: 'description', label: 'Description (scraped)' },
+  { key: 'price', label: 'Price (scraped)' },
+  { key: 'category', label: 'Category (scraped)' },
+  { key: 'subcategory', label: 'Subcategory (scraped)' },
+  { key: 'quantity', label: 'Quantity (scraped)' },
+  { key: 'condition', label: 'Condition (scraped)' },
+];
+
 /** Resolve a marketplace by its name OR by its site_type value. */
 export function getMarketplace(key) {
   if (!key) return null;
@@ -82,6 +126,40 @@ export function getMarketplace(key) {
 /** site_type/allowed_sites value for a marketplace name (or pass-through). */
 export function siteTypeFor(key) {
   return SITE_TYPE_BY_MARKETPLACE[key] || key;
+}
+
+/**
+ * Public storefront host per site_type (matches the main backend's OG
+ * SITE_BRANDS). Override the whole map with MAIN_SITE_HOSTS_JSON in .env.
+ */
+export const MAIN_SITE_HOSTS = (() => {
+  const defaults = {
+    LabGreenbidz: '101lab.co',
+    machines: '101machines.com',
+    '101it': '101it.co',
+    recycle: '101recycle.greenbidz.com',
+  };
+  try {
+    if (process.env.MAIN_SITE_HOSTS_JSON) {
+      return { ...defaults, ...JSON.parse(process.env.MAIN_SITE_HOSTS_JSON) };
+    }
+  } catch {
+    /* malformed override — fall back to defaults */
+  }
+  return defaults;
+})();
+
+/**
+ * Public listing URL for a synced product: the storefront page keyed by the
+ * main-site BATCH id. Returns null when we lack the batch id or a known host.
+ * @param {string} siteType
+ * @param {number} batchId
+ */
+export function mainListingUrl(siteType, batchId) {
+  if (batchId == null) return null;
+  const host = MAIN_SITE_HOSTS[siteType];
+  if (!host) return null;
+  return `https://${host}/buyer-marketplace/${batchId}`;
 }
 
 /** Flatten a marketplace's categories + subcategories into a lookup list. */
@@ -140,8 +218,13 @@ export default {
   SYNC_DEFAULTS,
   ENUMS,
   REQUIRED_FIELDS,
+  TARGET_FIELDS,
+  TARGET_FIELD_KEYS,
+  STANDARD_SOURCE_FIELDS,
+  MAIN_SITE_HOSTS,
   getMarketplace,
   siteTypeFor,
+  mainListingUrl,
   flattenCategories,
   matchCategory,
 };

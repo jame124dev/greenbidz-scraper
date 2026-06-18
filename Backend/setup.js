@@ -92,6 +92,10 @@ async function reconcileColumns() {
 
     await add('products', 'synced_at', 'synced_at TIMESTAMP NULL DEFAULT NULL');
     await add('products', 'main_product_id', 'main_product_id INT NULL DEFAULT NULL');
+    await add('products', 'main_batch_id', 'main_batch_id INT NULL DEFAULT NULL');
+    await add('products', 'main_site_type', 'main_site_type VARCHAR(32) NULL DEFAULT NULL');
+    await add('products', 'main_seller_id', 'main_seller_id INT NULL DEFAULT NULL');
+    await add('products', 'main_seller_name', 'main_seller_name VARCHAR(255) NULL DEFAULT NULL');
     await add('crawl_history', 'scraped_products', 'scraped_products INT NULL');
     // Older schema created product_url as VARCHAR(191) — widen it for long slugs.
     const urlLen = await colLen('products', 'product_url');

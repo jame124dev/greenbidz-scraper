@@ -6,6 +6,7 @@ import {
   CalendarClock,
   MousePointerClick,
   UploadCloud,
+  CheckCircle2,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export const navGroups: NavGroup[] = [
     heading: 'Data Management',
     items: [
       { to: '/products', label: 'Products', icon: Package, badge: 'products' },
+      { to: '/sync-products', label: 'Sync Products', icon: CheckCircle2 },
       { to: '/sync-manager', label: 'Sync Manager', icon: UploadCloud },
       { to: '/crawls', label: 'Crawl History', icon: History },
     ],

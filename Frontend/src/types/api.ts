@@ -63,6 +63,14 @@ export interface Product {
   synced?: boolean;
   synced_at?: string | null;
   main_product_id?: number | null;
+  /** Main-site batch id + marketplace synced to (used to build the public link). */
+  main_batch_id?: number | null;
+  main_site_type?: string | null;
+  /** Seller the product was synced under (prefills a re-sync). */
+  main_seller_id?: number | null;
+  main_seller_name?: string | null;
+  /** Public main-site listing URL, computed server-side when batch_id is known. */
+  main_product_url?: string | null;
   // Present only on the single-product detail endpoint:
   description?: string | null;
   raw_data?: unknown;
@@ -242,12 +250,41 @@ export interface SyncSellersResponse {
   sellers: SyncSeller[];
   pagination: { page: number; limit: number; total: number; totalPages: number } | null;
 }
+export interface SyncTargetField {
+  key: string;
+  label: string;
+  defaultSource?: string;
+  enum?: string;
+}
+export interface SyncSourceFieldDef {
+  key: string;
+  label: string;
+}
 export interface SyncMeta {
   marketplaces: SyncMarketplace[];
   sellers: SyncSeller[];
   defaults: Record<string, unknown>;
   enums: Record<string, string[]>;
   requiredFields: string[];
+  targetFields: SyncTargetField[];
+  standardSourceFields: SyncSourceFieldDef[];
+}
+export interface SyncSourceField {
+  key: string;
+  label: string;
+  sample: string;
+}
+export interface SyncSourceFieldsResponse {
+  fields: SyncSourceField[];
+}
+export interface SyncFieldMapping {
+  target_field: string;
+  source_field: string;
+}
+export interface SyncFieldMappingsResponse {
+  siteType: string;
+  targetFields: SyncTargetField[];
+  mappings: SyncFieldMapping[];
 }
 export interface SyncPreviewItem {
   productId: number;
@@ -306,8 +343,14 @@ export interface SyncBatchInput {
 export interface SyncSubmitResponse {
   ok: boolean;
   siteType: string;
+  /** Total products that succeeded (created + updated). */
   count: number;
-  mainApiResponse: unknown;
+  /** Products newly created on the main site. */
+  created: number;
+  /** Already-synced products updated in place (resync). */
+  updated: number;
+  syncedIds: number[];
+  failed: { productId: number; error?: string; mode: 'create' | 'update' }[];
 }
 
 // ── Sync Management (background runs + history + scheduler) ──────────────────

@@ -5,13 +5,15 @@
  * progress, and persisted to sync_runs / sync_items for durable history.
  *
  * Per chunk: map products (reusing buildBatch), record blocked products as
- * `skipped`, POST the syncable ones via postGroupedListings, then record each
- * as `success` (got a main id) or `failed`. Successful products flow through
- * the existing markProductsSynced so products.synced_at stays authoritative.
+ * `skipped`, then dispatch the syncable ones via sendSyncableBatch — products
+ * with a stored main_product_id are UPDATED in place (resync), the rest are
+ * CREATED — and record each as `success` (got a main id) or `failed`. Successful
+ * products flow through the existing markProductsSynced so products.synced_at
+ * stays authoritative.
  */
 import { createJob, isCancelled, finishJob, failJob, updateJob } from '../web/jobs.js';
 import { buildBatch } from '../controllers/sync.controller.js';
-import { postGroupedListings } from './syncSender.js';
+import { sendSyncableBatch } from './syncDispatch.js';
 import { siteTypeFor, getMarketplace } from '../config/sync-config.js';
 import { addSyncItems, updateSyncRun, markProductsSynced } from '../database/queries.js';
 import { logger } from '../utils/logger.js';
@@ -80,31 +82,34 @@ export function startSyncJob({ runId, productIds, marketplace, sellerId, sellerN
         failed += items.length;
 
         if (syncable.length) {
-          const sent = await postGroupedListings({ siteType, results: syncable, country: country || '', seller: batch.seller });
-          if (!sent.ok) {
-            // Entire POST failed — every syncable product in this chunk failed.
-            for (const r of syncable) {
-              items.push({ sync_run_id: runId, product_id: r.productId, status: 'failed', error: sent.error || `HTTP ${sent.status}` });
+          // Products with a stored main id are UPDATED in place; the rest are
+          // CREATED. Outcomes are per-product regardless of which path ran.
+          const { outcomes, mainIdByProductId, batchByProductId } = await sendSyncableBatch({
+            siteType,
+            syncable,
+            country: country || '',
+            seller: batch.seller,
+          });
+
+          const successIds = [];
+          for (const o of outcomes) {
+            if (o.ok) {
+              items.push({ sync_run_id: runId, product_id: o.productId, status: 'success', main_product_id: o.mainId });
+              successIds.push(o.productId);
+              success += 1;
+            } else {
+              items.push({ sync_run_id: runId, product_id: o.productId, status: 'failed', error: o.error });
+              failed += 1;
             }
-            failed += syncable.length;
-          } else {
-            const successIds = [];
-            for (const r of syncable) {
-              const mid = sent.mainIdByProductId[r.productId];
-              if (mid != null) {
-                items.push({ sync_run_id: runId, product_id: r.productId, status: 'success', main_product_id: mid });
-                successIds.push(r.productId);
-                success += 1;
-              } else {
-                items.push({ sync_run_id: runId, product_id: r.productId, status: 'failed', error: 'No main product id returned.' });
-                failed += 1;
-              }
-            }
-            if (successIds.length) {
-              await markProductsSynced(successIds, sent.mainIdByProductId).catch((e) =>
-                logger.warn(`syncJob: markProductsSynced failed: ${e.message}`),
-              );
-            }
+          }
+          if (successIds.length) {
+            // Refreshes synced_at; persists main id/batch/site_type for created ones.
+            await markProductsSynced(successIds, {
+              mainIdByProductId,
+              batchByProductId,
+              siteType,
+              seller: { id: sellerId, name: sellerName },
+            }).catch((e) => logger.warn(`syncJob: markProductsSynced failed: ${e.message}`));
           }
         }
 

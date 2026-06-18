@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { UploadCloud, ArrowLeft, CheckCircle2, AlertTriangle, ImageIcon, Loader2, Clock } from 'lucide-react';
+import { UploadCloud, ArrowLeft, CheckCircle2, AlertTriangle, ImageIcon, Loader2, Clock, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -12,6 +12,8 @@ import { useSyncMeta, useSyncSellers, useSyncCategories, usePreviewSync, useSubm
 import { htmlToText } from '@/lib/html';
 import type { SyncCategory } from '@/types/api';
 import { CategoryMappingModal } from './CategoryMappingModal';
+import { FieldMappingModal } from './FieldMappingModal';
+import { SellerCombobox } from './SellerCombobox';
 
 /** Friendly labels for the condition codes the main API expects. */
 const CONDITION_LABELS: Record<string, string> = {
@@ -58,7 +60,7 @@ function effectiveCategoryName(f: Form, categories: SyncCategory[]): string {
 export function SyncPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const productIds = useMemo(
+  const urlIds = useMemo(
     () =>
       (params.get('ids') || '')
         .split(',')
@@ -66,6 +68,16 @@ export function SyncPage() {
         .filter((n) => Number.isInteger(n) && n > 0),
     [params],
   );
+  // Products removed from this sync (the × on a card). Kept client-side so we
+  // don't refetch the preview — they're just excluded from display + submit.
+  const [removedIds, setRemovedIds] = useState<Set<number>>(new Set());
+  const productIds = useMemo(() => urlIds.filter((id) => !removedIds.has(id)), [urlIds, removedIds]);
+  const removeProduct = (id: number) => setRemovedIds((prev) => new Set(prev).add(id));
+
+  // Optional seller prefill from the URL (e.g. re-sync from the Sync Products
+  // page passes the seller the product was originally synced with).
+  const urlSellerId = Number(params.get('sellerId')) || null;
+  const urlSellerName = params.get('sellerName') || '';
 
   const meta = useSyncMeta();
   const preview = usePreviewSync();
@@ -73,18 +85,14 @@ export function SyncPage() {
   const startRun = useStartSyncRun();
 
   const [marketplace, setMarketplace] = useState('');
-  const [sellerId, setSellerId] = useState<number | null>(null);
-  const [sellerName, setSellerName] = useState('');
-  const [sellerSearchInput, setSellerSearchInput] = useState('');
+  const [sellerId, setSellerId] = useState<number | null>(urlSellerId);
+  const [sellerName, setSellerName] = useState(urlSellerName);
   const [sellerSearch, setSellerSearch] = useState('');
   const [country, setCountry] = useState('Taiwan');
   const [forms, setForms] = useState<Record<number, Form>>({});
 
-  // Sellers are loaded from the main site (searchable, server-side).
-  useEffect(() => {
-    const t = setTimeout(() => setSellerSearch(sellerSearchInput.trim()), 300);
-    return () => clearTimeout(t);
-  }, [sellerSearchInput]);
+  // Sellers are loaded from the main site (searchable, server-side); the
+  // SellerCombobox debounces and drives `sellerSearch`.
   const sellersQ = useSyncSellers(sellerSearch);
   const sellers = sellersQ.data?.sellers ?? [];
 
@@ -155,6 +163,7 @@ export function SyncPage() {
   const enums = meta.data?.enums ?? {};
   const [addCatFor, setAddCatFor] = useState<number | null>(null);
   const [showCatMap, setShowCatMap] = useState(false);
+  const [showFieldMap, setShowFieldMap] = useState(false);
 
   // Re-run the mapping preview (e.g. after saving category mappings).
   const rerunPreview = () => {
@@ -277,34 +286,18 @@ export function SyncPage() {
             </select>
           </Field>
           <Field label="Seller (from main site)">
-            <input
-              className="input mb-2"
-              placeholder="Search sellers by name / email…"
-              value={sellerSearchInput}
-              onChange={(e) => setSellerSearchInput(e.target.value)}
-            />
-            <select
-              className="input"
-              value={sellerId ?? ''}
-              onChange={(e) => {
-                const id = Number(e.target.value);
-                setSellerId(id);
-                setSellerName(sellers.find((s) => s.id === id)?.displayName ?? '');
+            <SellerCombobox
+              value={sellerId}
+              selectedLabel={sellerName}
+              sellers={sellers}
+              loading={sellersQ.isFetching}
+              total={sellersQ.data?.pagination?.total}
+              onSearch={setSellerSearch}
+              onSelect={(s) => {
+                setSellerId(s.id);
+                setSellerName(s.displayName);
               }}
-            >
-              {sellerId != null && !sellers.some((s) => s.id === sellerId) && (
-                <option value={sellerId}>{sellerName || `Seller #${sellerId}`}</option>
-              )}
-              {sellers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.displayName} (#{s.id})
-                  {s.totalListings != null ? ` · ${s.totalListings} listings` : ''}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-[11px] text-muted">
-              {sellersQ.isFetching ? 'Loading sellers…' : `${sellers.length} shown${sellersQ.data?.pagination ? ` of ${sellersQ.data.pagination.total}` : ''}`}
-            </p>
+            />
           </Field>
           <Field label="Country">
             <input className="input" value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. Taiwan" />
@@ -312,13 +305,16 @@ export function SyncPage() {
         </CardBody>
       </Card>
 
-      {/* Category mapping entry point */}
+      {/* Category + field mapping entry points */}
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant="secondary" size="sm" onClick={() => setShowCatMap(true)}>
           Set category mapping
         </Button>
+        <Button variant="secondary" size="sm" onClick={() => setShowFieldMap(true)} disabled={!marketplace}>
+          Field mapping
+        </Button>
         <span className="text-xs text-muted">
-          Map this site’s scraped categories → main-site categories once, so they auto-select.
+          Map categories and choose which scraped field fills each main-site field (incl. metadata).
         </span>
       </div>
 
@@ -335,6 +331,7 @@ export function SyncPage() {
         <div className="mt-4 space-y-4">
           {catsQ.isLoading && <p className="text-xs text-muted">Loading categories…</p>}
           {results.map((r) => {
+            if (removedIds.has(r.productId)) return null; // removed from this sync
             const f = forms[r.productId];
             if (r.error || !f) {
               return (
@@ -375,6 +372,14 @@ export function SyncPage() {
                         </>
                       )}
                     </Badge>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md p-1.5 text-muted hover:bg-panel2 hover:text-danger"
+                      title="Remove from this sync"
+                      onClick={() => removeProduct(r.productId)}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
 
                   {/* Scraped category that didn't match the main-site list */}
@@ -485,6 +490,7 @@ export function SyncPage() {
         {submitted && (
           <span className="flex items-center gap-1 text-xs text-accent">
             <CheckCircle2 className="h-3.5 w-3.5" /> Synced {submit.data?.count} product(s) to main site
+            {submit.data?.updated ? ` (${submit.data.created} created, ${submit.data.updated} updated)` : ''}
           </span>
         )}
         <div className="ml-auto flex gap-2">
@@ -531,6 +537,14 @@ export function SyncPage() {
       <CategoryMappingModal
         open={showCatMap}
         onClose={() => setShowCatMap(false)}
+        marketplace={marketplace}
+        productIds={productIds}
+        onSaved={rerunPreview}
+      />
+
+      <FieldMappingModal
+        open={showFieldMap}
+        onClose={() => setShowFieldMap(false)}
         marketplace={marketplace}
         productIds={productIds}
         onSaved={rerunPreview}

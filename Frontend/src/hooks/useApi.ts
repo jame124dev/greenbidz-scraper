@@ -208,6 +208,33 @@ export function useSaveCategoryMappings() {
   });
 }
 
+export function useSourceFields(
+  opts: { profile?: string; productIds?: number[] },
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: ['source-fields', opts.profile ?? '', (opts.productIds ?? []).join(',')],
+    queryFn: () => api.getSourceFields(opts),
+    enabled,
+  });
+}
+
+export function useFieldMappings(siteType: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['field-mappings', siteType],
+    queryFn: () => api.getFieldMappings(siteType),
+    enabled: enabled && !!siteType,
+  });
+}
+
+export function useSaveFieldMappings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Parameters<typeof api.saveFieldMappings>[0]) => api.saveFieldMappings(body),
+    onSuccess: (_res, body) => qc.invalidateQueries({ queryKey: ['field-mappings', body.siteType] }),
+  });
+}
+
 export function useSyncSellers(search: string) {
   return useQuery({
     queryKey: ['sync-sellers', search],

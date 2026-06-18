@@ -28,6 +28,13 @@ export const Product = sequelize.define(
     last_error: { type: DataTypes.TEXT, allowNull: true },
     synced_at: { type: DataTypes.DATE, allowNull: true },
     main_product_id: { type: DataTypes.INTEGER, allowNull: true },
+    // Main-site batch id + the marketplace (site_type) synced to — together they
+    // build the public listing link: https://<host>/buyer-marketplace/<batch>.
+    main_batch_id: { type: DataTypes.INTEGER, allowNull: true },
+    main_site_type: { type: DataTypes.STRING(32), allowNull: true },
+    // Seller the product was synced under — reused to prefill a re-sync.
+    main_seller_id: { type: DataTypes.INTEGER, allowNull: true },
+    main_seller_name: { type: DataTypes.STRING(255), allowNull: true },
   },
   { tableName: 'products', timestamps: false },
 );

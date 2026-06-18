@@ -44,6 +44,9 @@ export function ProductDetailDrawer({
             />
             <Fact label="Profile" value={full.profile_file_name || '—'} mono />
             <Fact label="External ID" value={full.external_id} mono />
+            {full.synced && (
+              <Fact label="Main site ID" value={full.main_product_id ?? '—'} mono />
+            )}
             <Fact label="First seen" value={formatDate(full.first_seen_at)} />
             <Fact label="Last seen" value={formatDate(full.last_seen_at)} />
             <Fact label="Scraped at" value={formatDate(full.scraped_at)} />
@@ -59,6 +62,16 @@ export function ProductDetailDrawer({
             >
               Open source page <ExternalLink className="h-3.5 w-3.5" />
             </a>
+            {full.main_product_url && (
+              <a
+                href={full.main_product_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-sky2 hover:underline"
+              >
+                Open on main site <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
             <Button
               size="sm"
               variant="secondary"

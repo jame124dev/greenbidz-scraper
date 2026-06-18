@@ -12,7 +12,7 @@ type TabKey = 'new' | 'history' | 'mappings' | 'settings';
 const TABS: { key: TabKey; label: string; icon: typeof UploadCloud }[] = [
   { key: 'new', label: 'New Sync', icon: UploadCloud },
   { key: 'history', label: 'History', icon: History },
-  { key: 'mappings', label: 'Category Mappings', icon: Tags },
+  { key: 'mappings', label: 'Mappings', icon: Tags },
   { key: 'settings', label: 'Settings', icon: Settings2 },
 ];
 

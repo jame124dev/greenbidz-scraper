@@ -86,7 +86,10 @@ export function NewSyncTab() {
       else next.add(id);
       return next;
     });
-  const selectablePage = rows.filter((p) => !p.synced);
+  // Synced products are selectable too — resyncing one UPDATES the existing
+  // main-site listing (it carries a stored main_product_id) rather than
+  // creating a duplicate.
+  const selectablePage = rows;
   const allPageSelected = selectablePage.length > 0 && selectablePage.every((p) => selectedIds.has(p.id));
   const toggleAllPage = () =>
     setSelectedIds((prev) => {
@@ -241,8 +244,7 @@ export function NewSyncTab() {
                           type="checkbox"
                           className="h-4 w-4 cursor-pointer accent-accent disabled:opacity-40"
                           checked={selectedIds.has(p.id)}
-                          disabled={!!p.synced}
-                          title={p.synced ? 'Already synced' : undefined}
+                          title={p.synced ? 'Already synced — resync will update the main-site listing' : undefined}
                           onChange={() => toggleId(p.id)}
                         />
                       </TD>

@@ -49,6 +49,10 @@ CREATE TABLE IF NOT EXISTS products (
     -- Sync-to-main-site tracking.
     synced_at           TIMESTAMP NULL DEFAULT NULL,
     main_product_id     INT NULL DEFAULT NULL,
+    main_batch_id       INT NULL DEFAULT NULL,
+    main_site_type      VARCHAR(32) NULL DEFAULT NULL,
+    main_seller_id      INT NULL DEFAULT NULL,
+    main_seller_name    VARCHAR(255) NULL DEFAULT NULL,
     UNIQUE KEY uq_products_url (product_url),
     KEY idx_products_profile (profile_file_name),
     KEY idx_products_first_seen (first_seen_at),
@@ -168,6 +172,20 @@ CREATE TABLE IF NOT EXISTS sync_settings (
     id           INT AUTO_INCREMENT PRIMARY KEY,
     config_json  LONGTEXT,                 -- JSON
     updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Field mappings (main-site target field → scraped source field) ───────────
+-- source_field: 'title'|'description'|'price' (product columns),
+-- 'category'|'subcategory'|'quantity'|'condition'|'raw:<key>' (raw_data keys),
+-- or 'spec:<Label>' (raw_data.specifications[Label]). Reused on every sync.
+CREATE TABLE IF NOT EXISTS field_mappings (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    site_type     VARCHAR(32)  NOT NULL,
+    target_field  VARCHAR(128) NOT NULL,   -- 'meta:<label>' bundle keys fit here
+    source_field  VARCHAR(255) NOT NULL,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_field_mappings_key (site_type, target_field)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- All performance indexes are declared inline within the CREATE TABLE

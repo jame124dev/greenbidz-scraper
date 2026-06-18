@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { ProductsPage } from '@/features/products/ProductsPage';
+import { SyncProductsPage } from '@/features/products/SyncProductsPage';
 import { CrawlsPage } from '@/features/crawls/CrawlsPage';
 import { MappingStudioPage } from '@/features/mapping-studio/MappingStudioPage';
 import { ProfilesPage } from '@/features/profiles/ProfilesPage';
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'scraper/new', element: <MappingStudioPage /> },
       { path: 'products', element: <ProductsPage /> },
+      { path: 'sync-products', element: <SyncProductsPage /> },
       { path: 'sync', element: <SyncPage /> },
       { path: 'sync-manager', element: <SyncManagerPage /> },
       { path: 'crawls', element: <CrawlsPage /> },

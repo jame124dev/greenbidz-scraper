@@ -24,6 +24,8 @@ import type {
   SyncPreviewResponse,
   SyncSellersResponse,
   SyncSourceCategoriesResponse,
+  SyncSourceFieldsResponse,
+  SyncFieldMappingsResponse,
   SyncSubmitResponse,
   SyncRunInput,
   MappedCategoriesResponse,
@@ -93,7 +95,7 @@ export interface ProductsQuery {
   limit?: number;
   offset?: number;
   scrapedOnly?: boolean;
-  status?: 'all' | 'scraped' | 'unscraped' | 'incomplete';
+  status?: 'all' | 'scraped' | 'unscraped' | 'incomplete' | 'synced';
   profile?: string;
   search?: string;
 }
@@ -214,6 +216,26 @@ export const api = {
     }>;
   }) =>
     request<{ ok: boolean; written: number }>('/sync/category-mappings', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getSourceFields: (opts: { profile?: string; productIds?: number[] } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.profile) params.set('profile', opts.profile);
+    if (opts.productIds?.length) params.set('productIds', opts.productIds.join(','));
+    const qs = params.toString();
+    return request<SyncSourceFieldsResponse>(`/sync/source-fields${qs ? `?${qs}` : ''}`);
+  },
+
+  getFieldMappings: (siteType: string) =>
+    request<SyncFieldMappingsResponse>(`/sync/field-mappings?siteType=${encodeURIComponent(siteType)}`),
+
+  saveFieldMappings: (body: {
+    siteType: string;
+    mappings: Array<{ target_field: string; source_field: string }>;
+  }) =>
+    request<{ ok: boolean; written: number; cleared: number }>('/sync/field-mappings', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

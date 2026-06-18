@@ -12,16 +12,25 @@ import {
   getDistinctSourceCategories,
   listCategoryMappings,
   saveCategoryMappings,
+  listFieldMappings,
+  saveFieldMappings,
+  getDistinctSourceFields,
+  createSyncRun,
+  addSyncItems,
+  updateSyncRun,
 } from '../database/queries.js';
 import { readAllProfiles } from '../utils/file-manager.js';
 import { mapProduct } from '../services/syncMapper.js';
-import { postGroupedListings } from '../services/syncSender.js';
+import { sendSyncableBatch } from '../services/syncDispatch.js';
 import {
   MARKETPLACES,
   SELLERS,
   SYNC_DEFAULTS,
   ENUMS,
   REQUIRED_FIELDS,
+  TARGET_FIELDS,
+  TARGET_FIELD_KEYS,
+  STANDARD_SOURCE_FIELDS,
   getMarketplace,
   siteTypeFor,
 } from '../config/sync-config.js';
@@ -247,6 +256,56 @@ export async function getSyncSellers(req, res) {
   res.json({ sellers, pagination: data.data?.pagination ?? null });
 }
 
+/**
+ * GET /api/sync/source-fields?profile=&productIds=
+ * Available scraped SOURCE fields to map FROM: the fixed standard fields merged
+ * with field keys discovered in products' raw_data (incl. `spec:<Label>`).
+ */
+export async function getSourceFields(req, res) {
+  const profile = req.query.profile ? String(req.query.profile) : undefined;
+  const productIds = req.query.productIds
+    ? String(req.query.productIds).split(',').map((s) => Number(s.trim())).filter(Boolean)
+    : undefined;
+  const discovered = await getDistinctSourceFields({ profile, productIds });
+  // Standard fields first, then discovered (raw:/spec:) ones.
+  const fields = [
+    ...STANDARD_SOURCE_FIELDS.map((f) => ({ ...f, sample: '' })),
+    ...discovered,
+  ];
+  res.json({ fields });
+}
+
+/** GET /api/sync/field-mappings?siteType= — saved target→source field routes. */
+export async function getFieldMappings(req, res) {
+  const mp = getMarketplace(req.query.siteType);
+  if (!mp) return res.status(400).json({ error: 'Valid siteType required.' });
+  const st = siteTypeFor(mp.name);
+  const rows = await listFieldMappings(st);
+  const mappings = rows.map((r) => ({ target_field: r.target_field, source_field: r.source_field }));
+  res.json({ siteType: st, targetFields: TARGET_FIELDS, mappings });
+}
+
+/**
+ * POST /api/sync/field-mappings { siteType, mappings: [{ target_field, source_field }] }
+ * An empty source_field clears that target back to the internal default.
+ * Unknown target_field keys are rejected.
+ */
+export async function postFieldMappings(req, res) {
+  const { siteType, mappings } = req.body || {};
+  const mp = getMarketplace(siteType);
+  if (!mp) return res.status(400).json({ error: 'Valid siteType required.' });
+  const list = Array.isArray(mappings) ? mappings : [];
+  // Accept the fixed target keys plus dynamic 'meta:<label>' bundle entries.
+  const bad = list.find(
+    (m) => m && m.target_field && !m.target_field.startsWith('meta:') && !TARGET_FIELD_KEYS.has(m.target_field),
+  );
+  if (bad) return res.status(400).json({ error: `Unknown target field: ${bad.target_field}` });
+  const st = siteTypeFor(mp.name);
+  const { written, cleared } = await saveFieldMappings(st, list);
+  logger.success(`Saved ${written} field mapping(s) (cleared ${cleared}) for ${st}.`);
+  res.json({ ok: true, written, cleared });
+}
+
 /** GET /api/sync/meta — everything the UI needs to render the sync flow. */
 export function getSyncMeta(req, res) {
   res.json({
@@ -260,6 +319,8 @@ export function getSyncMeta(req, res) {
     defaults: SYNC_DEFAULTS,
     enums: ENUMS,
     requiredFields: REQUIRED_FIELDS,
+    targetFields: TARGET_FIELDS,
+    standardSourceFields: STANDARD_SOURCE_FIELDS,
   });
 }
 
@@ -303,6 +364,15 @@ export async function buildBatch(body) {
     /* mappings unavailable — fall back to fuzzy match */
   }
 
+  // Saved field mappings (target_field → source_field) re-route how each field
+  // is filled from scraped data. Absent → internal auto-detection is used.
+  const fieldMappings = {};
+  try {
+    for (const m of await listFieldMappings(siteType)) fieldMappings[m.target_field] = m.source_field;
+  } catch {
+    /* mappings unavailable — fall back to internal mapping */
+  }
+
   const results = [];
   for (const id of productIds) {
     const product = await getProductById(Number(id));
@@ -318,6 +388,7 @@ export async function buildBatch(body) {
         country: country || '',
         defaultCurrency: currencyByProfile[product.profile_file_name],
         categoryMappings,
+        fieldMappings,
         overrides: overrides[id] || overrides[String(id)] || {},
       }),
     );
@@ -360,25 +431,79 @@ export async function submitSync(req, res) {
   }
 
   const siteType = siteTypeFor(batch.marketplace);
+  const start = Date.now();
 
-  // Delegate the actual POST to the shared sender (identical mechanics).
-  const sent = await postGroupedListings({
+  // Record a durable run so this sync shows up in the History tab, exactly like
+  // the background runner does (the only difference is this one runs inline).
+  let run = null;
+  try {
+    run = await createSyncRun({
+      site_type: siteType,
+      profile: req.body?.profile || null,
+      seller_id: batch.seller.id,
+      seller_name: batch.seller.displayName,
+      country: batch.country || null,
+      filters_json: null,
+      trigger: 'manual',
+      total: batch.results.length,
+      status: 'processing',
+    });
+  } catch (err) {
+    logger.warn(`Could not create sync run: ${err.message}`);
+  }
+
+  // Delegate to the shared dispatcher: products with a stored main id are
+  // UPDATED in place (resync), the rest are CREATED. Same logic the background
+  // sync-job runner uses.
+  const { outcomes, mainIdByProductId, batchByProductId } = await sendSyncableBatch({
     siteType,
-    results: batch.results,
+    syncable: batch.results,
     country: batch.country,
     seller: batch.seller,
   });
-  if (!sent.ok) {
-    if (sent.status === 0) return res.status(502).json({ error: sent.error });
-    return res.status(502).json({ error: sent.error, status: sent.status, data: sent.data });
+
+  const syncedIds = outcomes.filter((o) => o.ok).map((o) => o.productId);
+  const failed = outcomes.filter((o) => !o.ok);
+
+  // Persist per-product outcomes + finalize the run (best-effort).
+  const finalizeRun = async () => {
+    if (!run) return;
+    const items = outcomes.map((o) => ({
+      sync_run_id: run.id,
+      product_id: o.productId,
+      status: o.ok ? 'success' : 'failed',
+      main_product_id: o.ok ? o.mainId : null,
+      error: o.ok ? null : o.error,
+    }));
+    const status = syncedIds.length === 0 ? 'failed' : failed.length ? 'partial' : 'completed';
+    await addSyncItems(items).catch(() => {});
+    await updateSyncRun(run.id, {
+      status,
+      success_count: syncedIds.length,
+      failed_count: failed.length,
+      finished_at: new Date(),
+      duration_seconds: Math.round((Date.now() - start) / 1000),
+    }).catch(() => {});
+  };
+
+  if (!syncedIds.length) {
+    // Nothing succeeded — record the failure in history, then surface the error.
+    await finalizeRun();
+    const first = failed[0];
+    return res.status(502).json({ error: first ? first.error : 'Sync failed.', failed, runId: run?.id });
   }
 
-  // Mark these products as synced so the UI flags them and blocks re-sync.
-  const syncedIds = batch.results.map((r) => r.productId);
-  await markProductsSynced(syncedIds, sent.mainIdByProductId).catch((err) =>
-    logger.warn(`Could not mark products synced: ${err.message}`),
-  );
+  // Mark succeeded products synced; persists main id/batch/site_type + seller.
+  await markProductsSynced(syncedIds, {
+    mainIdByProductId,
+    batchByProductId,
+    siteType,
+    seller: { id: batch.seller.id, name: batch.seller.displayName },
+  }).catch((err) => logger.warn(`Could not mark products synced: ${err.message}`));
+  await finalizeRun();
 
-  logger.success(`Sync OK (${batch.results.length} product(s)).`);
-  res.json({ ok: true, siteType, count: batch.results.length, syncedIds, mainApiResponse: sent.data });
+  const created = outcomes.filter((o) => o.ok && o.mode === 'create').length;
+  const updated = outcomes.filter((o) => o.ok && o.mode === 'update').length;
+  logger.success(`Sync OK (${created} created, ${updated} updated, ${failed.length} failed).`);
+  res.json({ ok: true, siteType, count: syncedIds.length, created, updated, syncedIds, failed, runId: run?.id });
 }

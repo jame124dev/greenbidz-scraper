@@ -28,6 +28,26 @@ function toArr(v) {
 }
 
 /**
+ * Resolve a saved field-mapping SOURCE key to its scraped value for a product.
+ * Encoding: 'title'|'description'|'price' (product columns);
+ * 'category'|'subcategory'|'quantity'|'condition' or 'raw:<key>' (raw_data);
+ * 'spec:<Label>' (raw_data.specifications[Label]). Returns undefined when the
+ * key resolves to nothing, so callers can fall back to the default behavior.
+ */
+export function resolveSource(product, specs, sourceKey) {
+  if (!sourceKey) return undefined;
+  const rd = product.raw_data && typeof product.raw_data === 'object' ? product.raw_data : {};
+  let v;
+  if (sourceKey === 'title') v = product.title;
+  else if (sourceKey === 'description') v = product.description;
+  else if (sourceKey === 'price') v = product.price;
+  else if (sourceKey.startsWith('spec:')) v = specs ? specs[sourceKey.slice(5)] : undefined;
+  else if (sourceKey.startsWith('raw:')) v = rd[sourceKey.slice(4)];
+  else v = rd[sourceKey]; // bare standard key: category/subcategory/quantity/condition
+  return v == null || v === '' ? undefined : v;
+}
+
+/**
  * Resolve a category for a product: an explicit override id wins; otherwise
  * best-effort auto-match against the marketplace tree using title + description.
  */
@@ -75,7 +95,8 @@ export function resolveCategory({
  * @param {string} args.country
  * @param {string} [args.defaultCurrency] - the product's profile priceCurrency (pre-selects price_currency)
  * @param {object} [args.overrides] - per-product admin edits (incl. categoryId)
- * @returns {{ productId:number, mapped:object, images:string[], category:object|null, categoryMatched:boolean, autoMatched:boolean, missing:string[], syncable:boolean }}
+ * @param {Object<string,string>} [args.fieldMappings] - saved target_field → source_field routes.
+ * @returns {{ productId:number, mainProductId:number|null, mapped:object, images:string[], category:object|null, categoryMatched:boolean, autoMatched:boolean, missing:string[], syncable:boolean }}
  */
 export function mapProduct({
   product,
@@ -85,6 +106,7 @@ export function mapProduct({
   defaultCurrency,
   categoryMappings = {},
   overrides = {},
+  fieldMappings = {},
 }) {
   const marketplace = getMarketplace(marketplaceKey);
   const site_type = siteTypeFor(marketplace ? marketplace.name : marketplaceKey);
@@ -104,17 +126,23 @@ export function mapProduct({
     }
   }
 
+  // A saved field mapping re-routes a target field to a chosen scraped SOURCE.
+  // When set, its value takes precedence over the internal auto-detection but
+  // still loses to a per-product admin override. Returns undefined when no
+  // mapping is set or it resolves to nothing → fall back to default behavior.
+  const routed = (targetKey) => resolveSource(product, specs, fieldMappings?.[targetKey]);
+
   // Intelligent fallbacks derived from scraped data — applied only when the
-  // admin hasn't overridden the field (override > scraped > default).
-  const scrapedQuantity = simplifyQuantity(rd.quantity);
+  // admin hasn't overridden the field (override > mapped source > scrape > default).
+  const scrapedQuantity = simplifyQuantity(routed('quantity') ?? rd.quantity);
   const scrapedCondition = normalizeCondition(
-    findSpec(specs, [/item[\s_]*condition/i, /\bcondition\b/i]) || rd.condition,
+    routed('item_condition') ?? findSpec(specs, [/item[\s_]*condition/i, /\bcondition\b/i]) ?? rd.condition,
   );
-  const scrapedWeight = parseWeight(findSpec(specs, [/weight/i, /\bmass\b/i]));
-  const scrapedDimensions = findSpec(specs, [/dimension/i, /\bsize\b/i]);
-  const scrapedBrand = findSpec(specs, [/manufacturer/i, /\bbrand\b/i, /\bmake\b/i]);
-  const scrapedModel = findSpec(specs, [/^model$/i, /\bmodel\b/i]);
-  const scrapedSerial = findSpec(specs, [/serial/i]);
+  const scrapedWeight = parseWeight(routed('weight_per_unit') ?? findSpec(specs, [/weight/i, /\bmass\b/i]));
+  const scrapedDimensions = routed('dimensions') ?? findSpec(specs, [/dimension/i, /\bsize\b/i]);
+  const scrapedBrand = routed('brand') ?? findSpec(specs, [/manufacturer/i, /\bbrand\b/i, /\bmake\b/i]);
+  const scrapedModel = routed('model') ?? findSpec(specs, [/^model$/i, /\bmodel\b/i]);
+  const scrapedSerial = routed('serial_number') ?? findSpec(specs, [/serial/i]);
 
   // Condition: admin override wins; else normalized scrape; else default Used.
   const overrideCondition = toArr(overrides.item_condition);
@@ -135,9 +163,8 @@ export function mapProduct({
   const rawPrice =
     overrides.price_per_unit != null && overrides.price_per_unit !== ''
       ? overrides.price_per_unit
-      : product.price != null && product.price !== ''
-        ? product.price
-        : '';
+      : (routed('price_per_unit')
+        ?? (product.price != null && product.price !== '' ? product.price : ''));
 
   const images = Array.isArray(overrides.images)
     ? overrides.images
@@ -146,10 +173,10 @@ export function mapProduct({
       : [];
 
   const mapped = {
-    product_title: overrides.product_title ?? product.title ?? '',
+    product_title: overrides.product_title ?? routed('product_title') ?? product.title ?? '',
     // Descriptions are sometimes HTML — send clean readable text to the main site.
-    product_content: htmlToText(overrides.product_content ?? product.description ?? ''),
-    product_type: overrides.product_type ?? SYNC_DEFAULTS.product_type,
+    product_content: htmlToText(overrides.product_content ?? routed('product_content') ?? product.description ?? ''),
+    product_type: overrides.product_type ?? routed('product_type') ?? SYNC_DEFAULTS.product_type,
     product_category_ids: category ? String(category.term_id) : '',
     category_name: category ? category.name : '',
     seller_name: seller?.displayName ?? '',
@@ -157,19 +184,21 @@ export function mapProduct({
     steps: SYNC_DEFAULTS.steps,
     quantity: String(overrides.quantity ?? scrapedQuantity ?? SYNC_DEFAULTS.quantity),
     sellerVisible: SYNC_DEFAULTS.sellerVisible,
-    replacement_cost_per_unit: overrides.replacement_cost_per_unit ?? '',
+    replacement_cost_per_unit: overrides.replacement_cost_per_unit ?? routed('replacement_cost_per_unit') ?? '',
     weight_per_unit: overrides.weight_per_unit ?? (scrapedWeight ?? ''),
-    country: country ?? '',
-    item_grade: overrides.item_grade ?? '',
+    country: routed('country') ?? country ?? '',
+    item_grade: overrides.item_grade ?? routed('item_grade') ?? '',
     price_now_enabled: SYNC_DEFAULTS.price_now_enabled,
-    price_format: overrides.price_format ?? SYNC_DEFAULTS.price_format,
-    price_currency: overrides.price_currency ?? defaultCurrency ?? SYNC_DEFAULTS.price_currency,
+    price_format: overrides.price_format ?? routed('price_format') ?? SYNC_DEFAULTS.price_format,
+    price_currency: overrides.price_currency ?? routed('price_currency') ?? defaultCurrency ?? SYNC_DEFAULTS.price_currency,
     price_per_unit: rawPrice === '' ? '' : String(rawPrice),
     item_condition: conditionArr,
     operation_status: overrides.operation_status
       ? toArr(overrides.operation_status)
-      : SYNC_DEFAULTS.operation_status,
-    location: toArr(overrides.location ?? (country ? [country] : [])),
+      : routed('operation_status')
+        ? toArr(routed('operation_status'))
+        : SYNC_DEFAULTS.operation_status,
+    location: toArr(overrides.location ?? routed('location') ?? (country ? [country] : [])),
     allowed_sites: [site_type],
   };
 
@@ -183,12 +212,29 @@ export function mapProduct({
   else if (scrapedSerial) mapped.serial_number = scrapedSerial;
   if (overrides.dimensions) mapped.dimensions = String(overrides.dimensions).trim();
   else if (scrapedDimensions) mapped.dimensions = scrapedDimensions;
-  if (overrides.market_metrics) {
+  const marketMetrics = overrides.market_metrics ?? routed('market_metrics');
+  if (marketMetrics) {
     mapped.market_metrics =
-      typeof overrides.market_metrics === 'string'
-        ? overrides.market_metrics
-        : JSON.stringify(overrides.market_metrics);
+      typeof marketMetrics === 'string' ? marketMetrics : JSON.stringify(marketMetrics);
   }
+
+  // Mark the product as scraper-sourced on the main site.
+  mapped.is_scraped = SYNC_DEFAULTS.is_scraped ? '1' : '';
+
+  // Metadata bundle: every `meta:<label>` field mapping contributes one entry to
+  // a single scrape_meta JSON object { label: scrapedValue }. Lets the admin
+  // attach any number of scraped fields (incl. custom-labelled ones) to the
+  // main-site product. Per-product `overrides.scrape_meta` (object) merges on top.
+  const metaObj = {};
+  for (const [k, sourceKey] of Object.entries(fieldMappings || {})) {
+    if (!k.startsWith('meta:')) continue;
+    const v = resolveSource(product, specs, sourceKey);
+    if (v != null && v !== '') metaObj[k.slice(5)] = String(v);
+  }
+  if (overrides.scrape_meta && typeof overrides.scrape_meta === 'object') {
+    Object.assign(metaObj, overrides.scrape_meta);
+  }
+  if (Object.keys(metaObj).length) mapped.scrape_meta = JSON.stringify(metaObj);
 
   // Required-field gating (see REQUIRED_FIELDS): category + price.
   const missing = [];
@@ -197,6 +243,9 @@ export function mapProduct({
 
   return {
     productId: product.id,
+    // Main-site id from a prior successful sync (null on first sync). When set,
+    // the runner UPDATEs this product instead of creating a duplicate.
+    mainProductId: product.main_product_id ?? null,
     mapped,
     images,
     category: category ? { ...category, autoMatched } : null,
@@ -210,4 +259,4 @@ export function mapProduct({
   };
 }
 
-export default { mapProduct, resolveCategory };
+export default { mapProduct, resolveCategory, resolveSource };
