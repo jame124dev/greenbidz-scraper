@@ -545,6 +545,26 @@ export interface UrlPatternResponse {
   match: { fileName: string; profileName?: string } | null;
 }
 
+/** One leaf urlset in a site's sitemap, summarized for the Sitemap step. */
+export interface SitemapSection {
+  loc: string;
+  label: string;
+  urlCount: number;
+  sampleUrls: string[];
+}
+
+export interface SitemapSummaryResponse {
+  source: string | null;
+  totalUrls: number;
+  sections: SitemapSection[];
+}
+
+export interface SitemapMatchResponse {
+  matched: number;
+  total: number;
+  samples: string[];
+}
+
 export interface SaveProfileResponse {
   ok: boolean;
   fileName: string;
@@ -604,6 +624,20 @@ export interface DomProfile {
   /** A sample product URL kept so the mapping can be re-edited in the Studio. */
   sampleProductUrl?: string;
   listingUrls: string[];
+  /**
+   * How product URLs are discovered. Omitted/`undefined` → crawl listing pages
+   * with pagination (the original behavior). `sitemap` → read the site's XML
+   * sitemap(s). `auto` → try the sitemap, fall back to listing pagination.
+   */
+  discovery?: {
+    mode?: 'sitemap' | 'auto';
+    /** Optional explicit sitemap URL (skips robots.txt + common-path probing). */
+    sitemapUrl?: string;
+    /** Regex a product URL must match; defaults to pagination.productUrlPattern. */
+    productUrlPattern?: string;
+    /** Regexes that identify category URLs — stored for future category discovery. */
+    categoryPatterns?: string[];
+  };
   pagination: {
     productLinkSelector?: string;
     productUrlPattern?: string;

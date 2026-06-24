@@ -21,6 +21,7 @@ import cron from 'node-cron';
 import { crawlListingPage } from '../scrapers/listing-crawler.js';
 import { scrapeProduct, scrapeProductWithRetry } from '../scrapers/product-extractor.js';
 import { crawlListingApi } from '../scrapers/api-client.js';
+import { discoverProductUrls, productUrlPatternFromProfile } from '../scrapers/sitemap-crawler.js';
 import { downloadImages } from '../scrapers/image-downloader.js';
 import { autoDetectFields } from '../detectors/field-auto-detector.js';
 import {
@@ -246,6 +247,17 @@ export async function runCrawlForListing(listingUrl, options = {}) {
   // Use the pagination config from the DOM profile that owns this listing (built
   // visually in the Mapping Studio), falling back to the listing-crawler defaults.
   const domProfile = await findDomProfileForListing(listingUrl).catch(() => null);
+
+  // ── Sitemap discovery (opt-in via profile.discovery.mode) ───────────────────
+  // When a profile opts in, find product URLs from the site's XML sitemap(s)
+  // instead of paginating the listing. 'auto' falls back to DOM pagination when
+  // the sitemap yields nothing; 'sitemap' uses the sitemap result as-is.
+  const discoveryMode = domProfile?.profile?.discovery?.mode;
+  if (discoveryMode === 'sitemap' || discoveryMode === 'auto') {
+    const sm = await runSitemapCrawlForListing(listingUrl, domProfile, start, options);
+    if (sm) return sm; // null only in 'auto' mode with zero matches → fall through
+  }
+
   const pagination = options.pagination || domProfile?.profile?.pagination;
   // Make the silent fallback visible: if no profile pagination was found we use
   // the generic listing-crawler defaults, which rarely match a real site and
@@ -451,6 +463,128 @@ async function runApiCrawlForListing(listingUrl, apiProfile, start, options = {}
       duration,
       error: err.message,
     };
+  }
+}
+
+/**
+ * Sitemap-source crawl cycle: discover product URLs from the site's XML
+ * sitemap(s) (no listing pagination), then scrape the new ones with the owning
+ * DOM profile via the normal per-product path. Mirrors runApiCrawlForListing.
+ *
+ * @param {string} listingUrl
+ * @param {{ fileName: string, profile: object }} domProfile
+ * @param {number} start - Cycle start timestamp (ms).
+ * @param {object} [options]
+ * @returns {Promise<object|null>} Cycle summary, or null when mode is 'auto' and
+ *   the sitemap matched nothing (signals the caller to fall back to DOM crawl).
+ */
+async function runSitemapCrawlForListing(listingUrl, domProfile, start, options = {}) {
+  const { fileName, profile } = domProfile;
+  const mode = profile?.discovery?.mode;
+  const pattern = productUrlPatternFromProfile(profile);
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  const limit = options.limit ?? profile.scrapeLimit ?? null;
+
+  if (!pattern) {
+    logger.warn(
+      `Sitemap discovery for ${fileName} has no product URL pattern ` +
+        `(set discovery.productUrlPattern / pagination.productUrlPattern / urlPattern). ` +
+        `${mode === 'auto' ? 'Falling back to DOM crawl.' : 'Skipping.'}`,
+    );
+    return mode === 'auto' ? null : { listingUrl, found: 0, newCount: 0, scrapedCount: 0, failed: 0, missingMapping: 0, duration: 0 };
+  }
+
+  let products = [];
+  try {
+    const res = await discoverProductUrls({
+      siteUrl: listingUrl,
+      productUrlPattern: pattern,
+      sitemapUrl: profile?.discovery?.sitemapUrl,
+    });
+    products = res.products;
+  } catch (err) {
+    logger.error(`Sitemap discovery failed for ${listingUrl}: ${err.message}`);
+    if (mode === 'auto') return null; // fall back to DOM crawl
+    products = [];
+  }
+
+  if (!products.length) {
+    if (mode === 'auto') {
+      logger.info(`Sitemap matched 0 products for ${listingUrl} — falling back to DOM crawl.`);
+      return null;
+    }
+    logger.warn(`Sitemap matched 0 products for ${listingUrl} (pattern: ${pattern}).`);
+  }
+
+  // Per-profile total cap: stop recording new products for this site at the cap.
+  const capDomain = profile.domain || extractDomain(listingUrl);
+  const existingForDomain = await countProductsByDomain(capDomain).catch(() => 0);
+  const maxNew = Math.max(0, CONSTANTS.MAX_PRODUCTS_PER_PROFILE - existingForDomain);
+
+  const { brandNew, toScrape } = await recordAndSelect(
+    products.map((p) => ({ productUrl: p.productUrl, externalId: p.externalId })),
+    { maxNew, profileFileName: fileName },
+  );
+  const found = products.length;
+  const newCount = brandNew.length;
+
+  let targets = [...toScrape];
+  if (limit && limit > 0) targets = targets.slice(0, limit);
+  const selectedCount = targets.length;
+  onProgress?.({ phase: 'discovered', found, total: selectedCount });
+
+  const browser = options.browser || (await launchBrowser());
+  let scrapedCount = 0;
+  let failed = 0;
+  let missingMapping = 0;
+  try {
+    for (const url of targets) {
+      if (options.shouldStop?.()) {
+        logger.info('🛑 Scrape cancelled by user.');
+        break;
+      }
+      onProgress?.({ phase: 'scraping', current: url });
+      // eslint-disable-next-line no-await-in-loop
+      const result = await processProductUrl(url, browser, { forcedProfile: { fileName, profile } });
+      if (result.status === 'saved') scrapedCount += 1;
+      else if (result.status === 'failed') failed += 1;
+      else if (result.status === 'no-mapping') missingMapping += 1;
+      onProgress?.({ phase: 'item-done', ok: result.status === 'saved' });
+    }
+
+    const duration = Math.round((Date.now() - start) / 1000);
+    await recordCrawl({
+      listingUrl,
+      productsFound: found,
+      newProducts: newCount,
+      scrapedProducts: scrapedCount,
+      failedProducts: failed,
+      durationSeconds: duration,
+      status: 'completed',
+    });
+    logger.info(
+      `📊 Crawl complete: ${newCount} new, ${scrapedCount} scraped, ` +
+        `${failed} failed (sitemap) (${duration}s)`,
+    );
+    return { listingUrl, found, newCount, scrapedCount, failed, missingMapping, duration };
+  } catch (err) {
+    const duration = Math.round((Date.now() - start) / 1000);
+    await recordCrawl({
+      listingUrl,
+      productsFound: found,
+      newProducts: newCount,
+      failedProducts: failed,
+      durationSeconds: duration,
+      status: 'error',
+      errorMessage: err.message,
+    }).catch(() => {});
+    logger.error(`Sitemap crawl failed for ${listingUrl}: ${err.message}`, {
+      url: listingUrl,
+      stack: err.stack,
+    });
+    return { listingUrl, found, newCount, failed, missingMapping, duration, error: err.message };
+  } finally {
+    if (!options.browser) await closeBrowser(browser);
   }
 }
 

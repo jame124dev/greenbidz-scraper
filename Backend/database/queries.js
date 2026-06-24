@@ -24,6 +24,7 @@ import {
 } from '../models/index.js';
 import { CONSTANTS } from '../config/constants.js';
 import { mainListingUrl } from '../config/sync-config.js';
+import { fingerprint } from '../utils/contentHash.js';
 
 /**
  * Convert stored absolute local image paths to URL paths served by the backend
@@ -187,12 +188,17 @@ export async function upsertProduct(data) {
     imagesRemoteUrls = [],
   } = data;
 
+  // Fingerprint the scraped content so a later re-scrape can detect source-side
+  // changes (see utils/contentHash.js). Stored on every scrape; compared against
+  // synced_hash (captured at sync time) to flag products needing re-sync.
+  const contentHash = fingerprint({ title, price, description });
+
   await writeSql(
     `INSERT INTO products
        (external_id, product_url, profile_file_name, raw_data, title, price,
-        description, images_local_paths, images_remote_urls,
+        description, images_local_paths, images_remote_urls, content_hash,
         first_seen_at, last_seen_at, is_active, scraped, scraped_at, scrape_attempts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, TRUE, CURRENT_TIMESTAMP, 1)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, TRUE, TRUE, CURRENT_TIMESTAMP, 1)
      ON DUPLICATE KEY UPDATE
        external_id        = VALUES(external_id),
        profile_file_name  = VALUES(profile_file_name),
@@ -202,6 +208,7 @@ export async function upsertProduct(data) {
        description        = VALUES(description),
        images_local_paths = VALUES(images_local_paths),
        images_remote_urls = VALUES(images_remote_urls),
+       content_hash       = VALUES(content_hash),
        last_seen_at       = CURRENT_TIMESTAMP,
        is_active          = TRUE,
        scraped            = TRUE,
@@ -218,6 +225,7 @@ export async function upsertProduct(data) {
       description,
       JSON.stringify(imagesLocalPaths ?? []),
       JSON.stringify(imagesRemoteUrls ?? []),
+      contentHash,
     ],
   );
 
@@ -679,8 +687,11 @@ export async function markProductsSynced(
 ) {
   const clean = (Array.isArray(ids) ? ids : []).map(Number).filter((n) => Number.isInteger(n));
   if (!clean.length) return 0;
+  // Capture the just-synced content fingerprint as the new baseline. Copying the
+  // row's own content_hash means a later re-scrape that changes the content will
+  // diverge from synced_hash, flagging the product as needing re-sync.
   const [count] = await Product.update(
-    { synced_at: literal('CURRENT_TIMESTAMP') },
+    { synced_at: literal('CURRENT_TIMESTAMP'), synced_hash: literal('content_hash') },
     { where: { id: { [Op.in]: clean } } },
   );
   // Store per-product main-site identifiers where the response provided them.
@@ -721,6 +732,59 @@ export async function countProducts() {
     scraped: Number(r.scraped) || 0,
     unscraped: Number(r.unscraped) || 0,
   };
+}
+
+/**
+ * Count products whose scraped content has diverged from what was last synced
+ * to the main site — i.e. the source changed after we synced. Qualifies when a
+ * product is synced (main_product_id set) and content_hash <> synced_hash.
+ * @returns {Promise<number>}
+ */
+export async function countChangedProducts() {
+  const rows = await selectSql(
+    `SELECT COUNT(*) AS n FROM products
+      WHERE main_product_id IS NOT NULL
+        AND content_hash IS NOT NULL
+        AND synced_hash IS NOT NULL
+        AND content_hash <> synced_hash`,
+  );
+  return Number(rows[0]?.n) || 0;
+}
+
+/**
+ * List products needing re-sync (content changed since last sync), most recent
+ * scrape first. Shaped for a review screen.
+ * @param {object} [opts]
+ * @param {number} [opts.limit=100]
+ * @param {string|null} [opts.profile] - Filter to one profile_file_name.
+ * @returns {Promise<object[]>}
+ */
+export async function listChangedProducts({ limit = 100, profile = null } = {}) {
+  const lim = Math.max(1, Math.min(1000, Number(limit) || 100));
+  const where = [
+    'main_product_id IS NOT NULL',
+    'content_hash IS NOT NULL',
+    'synced_hash IS NOT NULL',
+    'content_hash <> synced_hash',
+  ];
+  const repl = [];
+  if (profile) {
+    where.push('profile_file_name = ?');
+    repl.push(profile);
+  }
+  const rows = await selectSql(
+    `SELECT id, external_id, product_url, profile_file_name, title, price, description,
+            scraped_at, synced_at, main_product_id, main_batch_id, main_site_type
+       FROM products
+      WHERE ${where.join(' AND ')}
+      ORDER BY scraped_at DESC
+      LIMIT ${lim}`,
+    repl,
+  );
+  for (const r of rows) {
+    r.main_product_url = mainListingUrl(r.main_site_type, r.main_batch_id);
+  }
+  return rows;
 }
 
 /**

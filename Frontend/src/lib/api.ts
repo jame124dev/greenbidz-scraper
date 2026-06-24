@@ -39,6 +39,8 @@ import type {
   SyncSchedulerStatus,
   SyncSchedulerConfig,
   UrlPatternResponse,
+  SitemapSummaryResponse,
+  SitemapMatchResponse,
 } from '@/types/api';
 
 // Backend API origin. Empty string would fall back to same-origin; we default
@@ -154,6 +156,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
+
+  /** Summarize a site's sitemap into clickable sections (Sitemap step). */
+  getSitemapSummary: (siteUrl: string, sitemapUrl?: string) =>
+    request<SitemapSummaryResponse>(
+      `/sitemap/summary?siteUrl=${encodeURIComponent(siteUrl)}` +
+        (sitemapUrl ? `&sitemapUrl=${encodeURIComponent(sitemapUrl)}` : ''),
+    ),
+
+  /** Count how many sitemap URLs match a product/category pattern. */
+  getSitemapMatch: (siteUrl: string, pattern: string, sitemapUrl?: string) =>
+    request<SitemapMatchResponse>(
+      `/sitemap/match?siteUrl=${encodeURIComponent(siteUrl)}&pattern=${encodeURIComponent(pattern)}` +
+        (sitemapUrl ? `&sitemapUrl=${encodeURIComponent(sitemapUrl)}` : ''),
+    ),
 
   saveProfile: (fileName: string | null, profile: DomProfile, runNow = true, createNew = false) =>
     request<SaveProfileResponse>('/save-profile', {

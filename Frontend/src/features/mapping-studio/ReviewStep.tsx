@@ -291,6 +291,17 @@ export function ReviewStep({ draft, onChange, saveFileName, createNew, isEdit }:
       <div className="card p-5">
         <h3 className="mb-3 text-sm font-semibold text-ink">Mapping summary</h3>
         <div className="space-y-1.5 text-xs">
+          <SummaryRow
+            label="Discovery"
+            value={
+              draft.discoveryMode === 'sitemap'
+                ? `Sitemap${draft.sitemapUrl ? ` (${draft.sitemapUrl})` : ' (auto-detect)'}`
+                : draft.discoveryMode === 'auto'
+                  ? 'Auto (sitemap, fallback to listing crawl)'
+                  : 'Crawl listing pages'
+            }
+            tag={draft.discoveryMode === 'listing' ? 'default' : 'sitemap'}
+          />
           {draft.fields
             .filter((f) => f.selector)
             .map((f) => (

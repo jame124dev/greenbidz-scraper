@@ -27,6 +27,7 @@ import { useSelectorBridge } from './useSelectorBridge';
 import { PagePreview } from './PagePreview';
 import { FieldPanel } from './FieldPanel';
 import { ReviewStep } from './ReviewStep';
+import { SitemapStep } from './SitemapStep';
 import {
   emptyDraft,
   profileToDraft,
@@ -95,6 +96,10 @@ export function MappingStudioPage() {
   const update = useCallback((patch: Partial<MappingDraft>) => {
     setDraft((d) => ({ ...d, ...patch }));
   }, []);
+
+  // In sitemap/auto discovery, step 1 ("Listing") is replaced by the Sitemap
+  // explorer — there's no listing page to map a Next button on.
+  const sitemapMode = draft.discoveryMode === 'sitemap' || draft.discoveryMode === 'auto';
 
   // Edit mode: load the saved profile once and hydrate the draft, then jump to
   // the Fields step (or Listing if no sample product URL is stored).
@@ -278,7 +283,8 @@ export function MappingStudioPage() {
   }, []);
 
   // ── current page src ───────────────────────────────────────────────────────────
-  const targetUrl = step === 1 ? draft.listingUrl : step === 2 ? draft.sampleProductUrl : '';
+  const targetUrl =
+    step === 1 && !sitemapMode ? draft.listingUrl : step === 2 ? draft.sampleProductUrl : '';
   const src = useMemo(
     () =>
       targetUrl
@@ -327,8 +333,9 @@ export function MappingStudioPage() {
   // external website gets a big canvas; restore it elsewhere and on unmount.
   const { setCollapsed } = useLayout();
   useEffect(() => {
-    setCollapsed(step === 1 || step === 2);
-  }, [step, setCollapsed]);
+    // Big canvas only when the page-preview is shown (listing/fields steps).
+    setCollapsed((step === 1 && !sitemapMode) || step === 2);
+  }, [step, sitemapMode, setCollapsed]);
   useEffect(() => () => setCollapsed(false), [setCollapsed]);
 
   // ── step navigation ──────────────────────────────────────────────────────────
@@ -375,7 +382,7 @@ export function MappingStudioPage() {
         }
       />
 
-      <Stepper step={step} />
+      <Stepper step={step} sitemapMode={sitemapMode} />
 
       <div className="mt-5">
         {step === 0 && (
@@ -391,7 +398,9 @@ export function MappingStudioPage() {
           />
         )}
 
-        {(step === 1 || step === 2) && (
+        {step === 1 && sitemapMode && <SitemapStep draft={draft} onChange={update} />}
+
+        {((step === 1 && !sitemapMode) || step === 2) && (
           <div className="grid h-[calc(100vh-340px)] min-h-[480px] grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
             <div className="card overflow-y-auto p-4">
               <FieldPanel
@@ -477,10 +486,15 @@ function isHttpUrl(u: string): boolean {
   }
 }
 
-function Stepper({ step }: { step: number }) {
+function Stepper({ step, sitemapMode }: { step: number; sitemapMode: boolean }) {
+  const meta = sitemapMode
+    ? STEP_META.map((m, i) =>
+        i === 1 ? { ...m, label: 'Sitemap', desc: 'Pick product & category URLs' } : m,
+      )
+    : STEP_META;
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-1">
-      {STEP_META.map((m, i) => {
+      {meta.map((m, i) => {
         const done = i < step;
         const active = i === step;
         const Icon = m.icon;
@@ -601,8 +615,56 @@ function UrlStep({
             />
           </div>
           <p className="mt-2 text-[11px] text-muted">
-            Use the page where products are listed and paginated — not a single product page.
+            {draft.discoveryMode === 'sitemap'
+              ? 'Any URL on the site works — products are found from the site’s XML sitemap, not this page.'
+              : 'Use the page where products are listed and paginated — not a single product page.'}
           </p>
+
+          {/* How product URLs are discovered — chosen up front so the rest of the
+              wizard fits the site. */}
+          <div className="mt-5 border-t border-line pt-4">
+            <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-muted">
+              Product discovery
+            </label>
+            <div className="inline-flex items-center gap-1 rounded-lg border border-line bg-panel2 p-1">
+              {([
+                { value: 'listing', label: 'Crawl listing' },
+                { value: 'sitemap', label: 'Sitemap' },
+                { value: 'auto', label: 'Auto' },
+              ] as const).map((m) => (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => update({ discoveryMode: m.value })}
+                  className={
+                    'rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ' +
+                    (draft.discoveryMode === m.value ? 'bg-accent text-accent-ink' : 'text-muted hover:text-ink')
+                  }
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {draft.discoveryMode !== 'listing' && (
+              <div className="mt-3">
+                <label className="mb-1.5 block text-[11px] uppercase tracking-wide text-muted">
+                  Sitemap URL (optional)
+                </label>
+                <input
+                  className="input font-mono text-xs"
+                  placeholder="auto-detect via robots.txt"
+                  value={draft.sitemapUrl ?? ''}
+                  onChange={(e) => update({ sitemapUrl: e.target.value || undefined })}
+                />
+              </div>
+            )}
+            <p className="mt-2 text-[11px] text-muted">
+              <b>Crawl listing</b> = page through listing URLs (default).{' '}
+              <b>Sitemap</b> = read the site’s XML sitemap to find every product at once — ignores
+              categories/pagination; the next “Listing” step is optional.{' '}
+              <b>Auto</b> = try the sitemap, fall back to crawling listing pages.
+            </p>
+          </div>
 
         {matchedProfile && !profileMode && (
           <div className="mt-4 rounded-lg border border-warn/40 bg-amber-900/20 p-3">

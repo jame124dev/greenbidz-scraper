@@ -35,6 +35,9 @@ export const Product = sequelize.define(
     // Seller the product was synced under — reused to prefill a re-sync.
     main_seller_id: { type: DataTypes.INTEGER, allowNull: true },
     main_seller_name: { type: DataTypes.STRING(255), allowNull: true },
+    // Change detection: fingerprint of current scraped content vs. last-synced.
+    content_hash: { type: DataTypes.STRING(64), allowNull: true },
+    synced_hash: { type: DataTypes.STRING(64), allowNull: true },
   },
   { tableName: 'products', timestamps: false },
 );

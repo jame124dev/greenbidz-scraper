@@ -87,6 +87,17 @@ export interface MappingDraft {
   scrapeLimit: number | null;
   /** Profile-level currency for prices (not a DOM-picked field). */
   priceCurrency: string;
+
+  /**
+   * How product URLs are found. 'listing' (default) = crawl listing pages with
+   * pagination; 'sitemap' = read the site's XML sitemap(s); 'auto' = try the
+   * sitemap, fall back to listing pagination if it finds nothing.
+   */
+  discoveryMode: 'listing' | 'sitemap' | 'auto';
+  /** Optional explicit sitemap URL (used when discoveryMode is sitemap/auto). */
+  sitemapUrl?: string;
+  /** Category URL regexes picked in the Sitemap step (stored for future use). */
+  categoryPatterns?: string[];
 }
 
 export const BUILTIN_FIELDS: FieldDraft[] = [
@@ -118,6 +129,7 @@ export function emptyDraft(): MappingDraft {
     scrapeMode: 'auto',
     scrapeLimit: 20,
     priceCurrency: 'USD',
+    discoveryMode: 'listing',
   };
 }
 
@@ -258,6 +270,16 @@ export function buildProfile(draft: MappingDraft, now: string): DomProfile {
     priceCurrency: draft.priceCurrency,
     ...(draft.sampleProductUrl ? { sampleProductUrl: draft.sampleProductUrl } : {}),
     listingUrls: draft.listingUrl ? [draft.listingUrl] : [],
+    ...(draft.discoveryMode && draft.discoveryMode !== 'listing'
+      ? {
+          discovery: {
+            mode: draft.discoveryMode,
+            ...(draft.sitemapUrl ? { sitemapUrl: draft.sitemapUrl } : {}),
+            ...(draft.productUrlPattern ? { productUrlPattern: draft.productUrlPattern } : {}),
+            ...(draft.categoryPatterns?.length ? { categoryPatterns: draft.categoryPatterns } : {}),
+          },
+        }
+      : {}),
     pagination: {
       ...(draft.productLinkSelector ? { productLinkSelector: draft.productLinkSelector } : {}),
       ...(draft.productUrlPattern ? { productUrlPattern: draft.productUrlPattern } : {}),
@@ -327,6 +349,9 @@ export function profileToDraft(config: DomProfile): MappingDraft {
     scrapeMode: config.scrapeMode || 'auto',
     scrapeLimit: config.scrapeLimit ?? null,
     priceCurrency: config.priceCurrency || 'USD',
+    discoveryMode: config.discovery?.mode ?? 'listing',
+    sitemapUrl: config.discovery?.sitemapUrl,
+    categoryPatterns: config.discovery?.categoryPatterns,
   };
 }
 

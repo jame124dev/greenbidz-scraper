@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS products (
     main_site_type      VARCHAR(32) NULL DEFAULT NULL,
     main_seller_id      INT NULL DEFAULT NULL,
     main_seller_name    VARCHAR(255) NULL DEFAULT NULL,
+    -- Change detection: fingerprint of current scraped content vs. the one at
+    -- last sync. Differing values (when synced) ⇒ the source changed.
+    content_hash        VARCHAR(64) NULL DEFAULT NULL,
+    synced_hash         VARCHAR(64) NULL DEFAULT NULL,
     UNIQUE KEY uq_products_url (product_url),
     KEY idx_products_profile (profile_file_name),
     KEY idx_products_first_seen (first_seen_at),
